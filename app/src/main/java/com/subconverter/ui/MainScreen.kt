@@ -101,9 +101,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
 import com.subconverter.data.OutputProfileEntity
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
@@ -141,6 +138,10 @@ fun MainScreen(viewModel: MainViewModel) {
     var viewingProfile by remember { mutableStateOf<OutputProfileEntity?>(null) }
     var scannedUrl by remember { mutableStateOf("") }
     var sharingUrl by remember { mutableStateOf("") }
+
+    if (editScreen == EditScreen.None && selectedTab != MainTab.Sources) {
+        androidx.activity.compose.BackHandler { selectedTab = MainTab.Sources }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -261,6 +262,10 @@ fun MainScreen(viewModel: MainViewModel) {
                 modifier = Modifier.padding(padding),
             )
         }
+    }
+
+    if (editScreen != EditScreen.None) {
+        androidx.activity.compose.BackHandler { editScreen = EditScreen.None }
     }
 
     when (editScreen) {
@@ -2081,18 +2086,48 @@ private fun QrScanScreen(
                             }
                             val mediaImage = imageProxy.image
                             if (mediaImage != null) {
-                                val inputImage = InputImage.fromMediaImage(
-                                    mediaImage, imageProxy.imageInfo.rotationDegrees,
-                                )
-                                BarcodeScanning.getClient().process(inputImage)
-                                    .addOnSuccessListener { barcodes ->
-                                        val url = barcodes.firstOrNull()?.rawValue
-                                        if (url != null) {
+                                try {
+                                    val w = mediaImage.width
+                                    val h = mediaImage.height
+                                    val yBuf = mediaImage.planes[0].buffer
+                                    val uBuf = mediaImage.planes[1].buffer
+                                    val vBuf = mediaImage.planes[2].buffer
+                                    val ySz = yBuf.remaining()
+                                    val uSz = uBuf.remaining()
+                                    val vSz = vBuf.remaining()
+                                    val nv21 = ByteArray(ySz + uSz + vSz)
+                                    yBuf.get(nv21, 0, ySz)
+                                    vBuf.get(nv21, ySz, vSz)
+                                    uBuf.get(nv21, ySz + vSz, uSz)
+                                    val yuv = android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, w, h, null)
+                                    val out = java.io.ByteArrayOutputStream()
+                                    yuv.compressToJpeg(android.graphics.Rect(0, 0, w, h), 90, out)
+                                    val bmp = android.graphics.BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+                                    val rotation = imageProxy.imageInfo.rotationDegrees
+                                    val rotated = if (rotation != 0 && bmp != null) {
+                                        val matrix = android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }
+                                        android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+                                    } else bmp
+                                    if (rotated != null) {
+                                        val pixels = IntArray(rotated.width * rotated.height)
+                                        rotated.getPixels(pixels, 0, rotated.width, 0, 0, rotated.width, rotated.height)
+                                        val source = com.google.zxing.RGBLuminanceSource(rotated.width, rotated.height, pixels)
+                                        val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+                                        val hints = mapOf(
+                                            com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to
+                                                listOf(com.google.zxing.BarcodeFormat.QR_CODE),
+                                        )
+                                        val result = com.google.zxing.MultiFormatReader().apply { setHints(hints) }.decode(binaryBitmap)
+                                        val url = result.text
+                                        if (url.isNotBlank()) {
                                             scanned = true
                                             onScanned(url)
                                         }
                                     }
-                                    .addOnCompleteListener { imageProxy.close() }
+                                } catch (_: Exception) {
+                                } finally {
+                                    imageProxy.close()
+                                }
                             } else {
                                 imageProxy.close()
                             }
