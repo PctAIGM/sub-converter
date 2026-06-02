@@ -16,7 +16,8 @@ android {
             keyPassword = "subconverterdebug"
         }
         create("release") {
-            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "keystore/release.jks")            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "keystore/release.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias = System.getenv("KEY_ALIAS") ?: "release"
             keyPassword = System.getenv("KEY_PASSWORD") ?: ""
         }
