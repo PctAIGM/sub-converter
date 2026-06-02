@@ -37,6 +37,10 @@ class SubscriptionFetcher(
             val profileWebPageUrl = response.header("profile-web-page-url")
                 ?: response.header("Profile-Web-Page-Url")
 
+            val profileUpdateIntervalHours = (response.header("profile-update-interval")
+                ?: response.header("Profile-Update-Interval"))
+                ?.trim()?.toIntOrNull()
+
             FetchResult(
                 yamlBody = body,
                 statusCode = response.code,
@@ -46,6 +50,7 @@ class SubscriptionFetcher(
                 ),
                 profileTitle = profileTitle?.trim()?.takeIf { it.isNotBlank() },
                 profileWebPageUrl = profileWebPageUrl?.trim()?.takeIf { it.isNotBlank() },
+                profileUpdateIntervalHours = profileUpdateIntervalHours,
             )
         }
     }

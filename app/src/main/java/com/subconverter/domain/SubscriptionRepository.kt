@@ -51,6 +51,9 @@ class SubscriptionRepository(
             val resolvedWebsite = source.website.takeIf { it.isNotBlank() }
                 ?: result.profileWebPageUrl
                 ?: source.website
+            val resolvedAutoRefresh = source.autoRefreshEnabled || result.profileUpdateIntervalHours != null
+            val resolvedInterval = result.profileUpdateIntervalHours?.toLong()?.times(60)
+                ?: source.refreshIntervalMinutes
             dao.update(
                 source.copy(
                     name = resolvedName,
@@ -63,6 +66,8 @@ class SubscriptionRepository(
                     downloadBytes = result.userInfo?.downloadBytes,
                     totalBytes = result.userInfo?.totalBytes,
                     expireAtSeconds = result.userInfo?.expireAtSeconds,
+                    autoRefreshEnabled = resolvedAutoRefresh,
+                    refreshIntervalMinutes = resolvedInterval.coerceAtLeast(15),
                 ),
             )
             RefreshOutcome(sourceId, success = true, message = "刷新成功")

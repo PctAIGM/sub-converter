@@ -40,6 +40,7 @@ data class FetchResult(
     val userInfo: SubscriptionUserInfo?,
     val profileTitle: String? = null,
     val profileWebPageUrl: String? = null,
+    val profileUpdateIntervalHours: Int? = null,
 )
 
 data class RefreshOutcome(
