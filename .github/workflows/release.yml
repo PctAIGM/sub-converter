@@ -20,13 +20,6 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-
 
       - name: Decode keystore
         run: echo "${{ secrets.SUB_CONVERTER_KEYSTORE_BASE64 }}" | base64 -d > app/keystore/release.jks
