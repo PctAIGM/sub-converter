@@ -38,7 +38,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.SUB_CONVERTER_KEY_PASSWORD }}
           VERSION_NAME: ${{ github.ref_name }}
           VERSION_CODE: ${{ github.run_number }}
-        run: ./gradlew assembleRelease
+        run: chmod +x gradlew && ./gradlew assembleRelease
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
