@@ -26,7 +26,7 @@ jobs:
 
       - name: Build release APK
         env:
-          KEYSTORE_PATH: app/keystore/release.jks
+          KEYSTORE_PATH: keystore/release.jks
           KEYSTORE_PASSWORD: ${{ secrets.SUB_CONVERTER_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.SUB_CONVERTER_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.SUB_CONVERTER_KEY_PASSWORD }}
