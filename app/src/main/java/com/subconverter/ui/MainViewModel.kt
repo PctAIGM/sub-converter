@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class MainUiState(
@@ -23,15 +24,21 @@ data class MainUiState(
     val settings: ServerSettings = ServerSettings(),
     val serverRunning: Boolean = false,
     val message: String = "",
+    val refreshingSourceIds: Set<Long> = emptySet(),
 )
 
 class MainViewModel(
     private val container: AppContainer,
 ) : ViewModel() {
     private val messages = MutableStateFlow("")
+    private val refreshingIds = MutableStateFlow<Set<Long>>(emptySet())
 
     fun showMessage(message: String) {
         messages.value = message
+    }
+
+    fun clearMessage() {
+        messages.value = ""
     }
 
     private val dataState = combine(
@@ -57,8 +64,9 @@ class MainViewModel(
     val uiState: StateFlow<MainUiState> = combine(
         dataState,
         messages,
-    ) { state, message ->
-        state.copy(message = message)
+        refreshingIds,
+    ) { state, message, ids ->
+        state.copy(message = message, refreshingSourceIds = ids)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
     init {
@@ -256,9 +264,11 @@ class MainViewModel(
 
     fun refreshSource(sourceId: Long) {
         viewModelScope.launch {
+            refreshingIds.update { it + sourceId }
             val globalUserAgent = container.settingsStore.current().globalUserAgent
             val outcome = container.subscriptionRepository.refreshSource(sourceId, globalUserAgent)
             messages.value = outcome.message
+            refreshingIds.update { it - sourceId }
         }
     }
 

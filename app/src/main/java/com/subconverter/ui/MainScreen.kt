@@ -1,10 +1,5 @@
 package com.subconverter.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,6 +46,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -117,7 +113,7 @@ private enum class MainTab(
     Server("服务", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
-private enum class EditScreen { None, Source, Template, Output }
+private enum class EditScreen { None, Source, Template, Output, Nodes }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,33 +124,18 @@ fun MainScreen(viewModel: MainViewModel) {
     var editingSource by remember { mutableStateOf<SubscriptionSourceEntity?>(null) }
     var editingTemplate by remember { mutableStateOf<TemplateEntity?>(null) }
     var editingProfile by remember { mutableStateOf<OutputProfileEntity?>(null) }
+    var viewingSource by remember { mutableStateOf<SubscriptionSourceEntity?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            selectedTab.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        AnimatedVisibility(
-                            visible = state.message.isNotBlank(),
-                            enter = fadeIn() + slideInVertically(),
-                            exit = fadeOut() + slideOutVertically(),
-                        ) {
-                            Text(
-                                text = state.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 1.dp),
-                            )
-                        }
-                    }
+                    Text(
+                        selectedTab.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -196,18 +177,26 @@ fun MainScreen(viewModel: MainViewModel) {
             )
         },
         bottomBar = {
-            iOSStyleNavigationBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+            iOSStyleNavigationBar(selectedTab = selectedTab, onTabSelected = {
+                selectedTab = it
+                viewModel.clearMessage()
+            })
         },
     ) { padding ->
         when (selectedTab) {
             MainTab.Sources -> SourcesScreen(
                 sources = state.sources,
+                refreshingSourceIds = state.refreshingSourceIds,
                 onRefresh = viewModel::refreshSource,
                 onEdit = {
                     editingSource = it
                     editScreen = EditScreen.Source
                 },
                 onDelete = viewModel::deleteSource,
+                onViewNodes = {
+                    viewingSource = it
+                    editScreen = EditScreen.Nodes
+                },
                 modifier = Modifier.padding(padding),
             )
 
@@ -275,6 +264,13 @@ fun MainScreen(viewModel: MainViewModel) {
                 editScreen = EditScreen.None
             },
         )
+
+        EditScreen.Nodes -> viewingSource?.let { src ->
+            NodePreviewScreen(
+                source = src,
+                onDismiss = { editScreen = EditScreen.None },
+            )
+        }
 
         EditScreen.None -> Unit
     }
@@ -611,6 +607,151 @@ private fun OutputEditScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NodePreviewScreen(
+    source: SubscriptionSourceEntity,
+    onDismiss: () -> Unit,
+) {
+    val allNames = remember(source.cachedYaml) { extractNodeNames(source.cachedYaml.orEmpty()) }
+
+    val includeRe = if (source.includeRegex.isNotBlank()) runCatching { Regex(source.includeRegex) }.getOrNull() else null
+    val excludeRe = if (source.excludeRegex.isNotBlank()) runCatching { Regex(source.excludeRegex) }.getOrNull() else null
+
+    val filtered = remember(allNames, source.includeRegex, source.excludeRegex) {
+        allNames.map { name ->
+            val included = includeRe == null || includeRe.containsMatchIn(name)
+            val excluded = excludeRe != null && excludeRe.containsMatchIn(name)
+            Triple(name, included && !excluded, source.prefix + name)
+        }
+    }
+    val matchCount = filtered.count { it.second }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(source.name, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "$matchCount / ${allNames.size} 个节点",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
+        if (allNames.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text("暂无节点数据", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("请先刷新订阅", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                if (source.prefix.isNotBlank() || source.includeRegex.isNotBlank() || source.excludeRegex.isNotBlank()) {
+                    item {
+                        Column(
+                            modifier = Modifier.padding(bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            if (source.prefix.isNotBlank()) {
+                                Text(
+                                    "前缀: ${source.prefix}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (source.includeRegex.isNotBlank()) {
+                                Text(
+                                    "保留: ${source.includeRegex}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (source.excludeRegex.isNotBlank()) {
+                                Text(
+                                    "排除: ${source.excludeRegex}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(filtered.size) { index ->
+                    val (originalName, matched, renamed) = filtered[index]
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (matched) MaterialTheme.colorScheme.surface
+                                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.5f)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (matched) Icons.Default.Check else Icons.Default.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = if (matched) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                renamed,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (matched) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            )
+                            if (renamed != originalName && matched) {
+                                Text(
+                                    originalName,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SmallFormField(
     label: String,
@@ -849,9 +990,11 @@ private fun iOSTintedIcon(
 @Composable
 private fun SourcesScreen(
     sources: List<SubscriptionSourceEntity>,
+    refreshingSourceIds: Set<Long>,
     onRefresh: (Long) -> Unit,
     onEdit: (SubscriptionSourceEntity) -> Unit,
     onDelete: (SubscriptionSourceEntity) -> Unit,
+    onViewNodes: (SubscriptionSourceEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -873,9 +1016,11 @@ private fun SourcesScreen(
         items(sources, key = { it.id }) { source ->
             SourceCard(
                 source = source,
+                refreshing = source.id in refreshingSourceIds,
                 onRefresh = { onRefresh(source.id) },
                 onEdit = { onEdit(source) },
                 onDelete = { onDelete(source) },
+                onViewNodes = { onViewNodes(source) },
             )
         }
     }
@@ -884,11 +1029,15 @@ private fun SourcesScreen(
 @Composable
 private fun SourceCard(
     source: SubscriptionSourceEntity,
+    refreshing: Boolean,
     onRefresh: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onViewNodes: () -> Unit,
 ) {
-    iOSGroupedCard {
+    iOSGroupedCard(
+        modifier = Modifier.clickable(onClick = onViewNodes),
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 iOSTintedIcon(Icons.Default.CloudDownload, MaterialTheme.colorScheme.primary)
@@ -899,8 +1048,24 @@ private fun SourceCard(
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    if (refreshing) {
+                        Text(
+                            "正在刷新...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
-                iOSIconButton(Icons.Default.Refresh, "刷新", onRefresh)
+                if (refreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                } else {
+                    iOSIconButton(Icons.Default.Refresh, "刷新", onRefresh)
+                }
                 iOSIconButton(Icons.Default.Edit, "编辑", onEdit)
                 iOSIconButton(Icons.Default.Delete, "删除", onDelete, tint = MaterialTheme.colorScheme.error)
             }
@@ -1647,25 +1812,13 @@ private fun TemplateDropdown(
 
 private fun extractNodeNames(yamlBody: String): List<String> {
     if (yamlBody.isBlank()) return emptyList()
-    val lines = yamlBody.lines()
-    val names = mutableListOf<String>()
-    var inProxies = false
-    for (line in lines) {
-        val trimmed = line.trimStart()
-        if (trimmed.startsWith("proxies:")) {
-            inProxies = true
-            continue
-        }
-        if (inProxies) {
-            if (trimmed.startsWith("- name:") || trimmed.startsWith("-name:")) {
-                val nameValue = trimmed.substringAfter("name:").trim().removeSurrounding("\"").removeSurrounding("'")
-                if (nameValue.isNotBlank()) names.add(nameValue)
-            } else if (!trimmed.startsWith("-") && !trimmed.startsWith(" ") && !trimmed.startsWith("#") && trimmed.isNotBlank()) {
-                break
-            }
-        }
+    val root = runCatching {
+        org.yaml.snakeyaml.Yaml().load<Map<String, Any?>>(yamlBody)
+    }.getOrNull() ?: return emptyList()
+    val proxies = (root["proxies"] as? List<*>).orEmpty()
+    return proxies.mapNotNull { proxy ->
+        (proxy as? Map<*, *>)?.get("name")?.toString()?.takeIf { it.isNotBlank() }
     }
-    return names
 }
 
 private fun trafficText(source: SubscriptionSourceEntity): String {

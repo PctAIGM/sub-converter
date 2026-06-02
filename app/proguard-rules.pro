@@ -1,1 +1,4 @@
-
+-keepattributes *Annotation*
+-keep class com.subconverter.data.** { *; }
+-keep class org.yaml.snakeyaml.** { *; }
+-dontwarn org.yaml.snakeyaml.**
