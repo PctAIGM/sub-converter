@@ -47,6 +47,8 @@ class OutputRepository(
             return RefreshOutcome(templateId, success = false, message = "模板没有远程地址")
         }
 
+        templateDao.update(template.copy(lastError = ""))
+
         return runCatching {
             val body = remoteTextFetcher.fetch(template.remoteUrl)
             templateDao.update(

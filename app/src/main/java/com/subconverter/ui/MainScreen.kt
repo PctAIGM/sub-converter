@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Settings
@@ -113,7 +114,7 @@ private enum class MainTab(
     Server("服务", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
-private enum class EditScreen { None, Source, Template, Output, Nodes }
+private enum class EditScreen { None, Source, Template, Output, Nodes, OutputNodes }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,6 +126,7 @@ fun MainScreen(viewModel: MainViewModel) {
     var editingTemplate by remember { mutableStateOf<TemplateEntity?>(null) }
     var editingProfile by remember { mutableStateOf<OutputProfileEntity?>(null) }
     var viewingSource by remember { mutableStateOf<SubscriptionSourceEntity?>(null) }
+    var viewingProfile by remember { mutableStateOf<OutputProfileEntity?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -211,6 +213,10 @@ fun MainScreen(viewModel: MainViewModel) {
                 },
                 onDelete = viewModel::deleteProfile,
                 onCopied = { viewModel.showMessage("订阅 URL 已复制") },
+                onViewNodes = {
+                    viewingProfile = it
+                    editScreen = EditScreen.OutputNodes
+                },
                 modifier = Modifier.padding(padding),
             )
 
@@ -268,6 +274,14 @@ fun MainScreen(viewModel: MainViewModel) {
         EditScreen.Nodes -> viewingSource?.let { src ->
             NodePreviewScreen(
                 source = src,
+                onDismiss = { editScreen = EditScreen.None },
+            )
+        }
+
+        EditScreen.OutputNodes -> viewingProfile?.let { profile ->
+            OutputNodePreviewScreen(
+                profile = profile,
+                sources = state.sources,
                 onDismiss = { editScreen = EditScreen.None },
             )
         }
@@ -492,7 +506,14 @@ private fun OutputEditScreen(
     val selectedSet = selectedSourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
 
     val mergedNodeNames = remember(sources.filter { it.id in selectedSet }.map { it.cachedYaml }) {
-        sources.filter { it.id in selectedSet }.flatMap { extractNodeNames(it.cachedYaml.orEmpty()) }
+        sources.filter { it.id in selectedSet }.flatMap { src ->
+            val names = extractNodeNames(src.cachedYaml.orEmpty())
+            val srcInc = src.includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+            val srcExc = src.excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+            names.filter { name ->
+                (srcInc == null || srcInc.containsMatchIn(name)) && !(srcExc != null && srcExc.containsMatchIn(name))
+            }.map { src.prefix + it }
+        }
     }
 
     EditScreenScaffold(
@@ -745,6 +766,123 @@ private fun NodePreviewScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OutputNodePreviewScreen(
+    profile: OutputProfileEntity,
+    sources: List<SubscriptionSourceEntity>,
+    onDismiss: () -> Unit,
+) {
+    val profileSourceIds = remember(profile.sourceIds) {
+        profile.sourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
+    }
+    val profileSources = remember(profileSourceIds, sources) {
+        profileSourceIds.mapNotNull { id -> sources.find { it.id == id } }
+            .filter { it.cachedYaml.isNotBlank() }
+    }
+
+    val allNodes = remember(profileSources) {
+        profileSources.flatMap { source ->
+            val names = extractNodeNames(source.cachedYaml)
+            val srcIncludeRe = source.includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+            val srcExcludeRe = source.excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+            names.mapNotNull { name ->
+                val included = srcIncludeRe == null || srcIncludeRe.containsMatchIn(name)
+                val excluded = srcExcludeRe != null && srcExcludeRe.containsMatchIn(name)
+                if (!included || excluded) return@mapNotNull null
+                source.prefix + name
+            }
+        }
+    }
+
+    val profileIncludeRe = profile.includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+    val profileExcludeRe = profile.excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+
+    val finalNodes = remember(allNodes, profile.includeRegex, profile.excludeRegex, profile.prefix) {
+        allNodes.mapNotNull { name ->
+            val included = profileIncludeRe == null || profileIncludeRe.containsMatchIn(name)
+            val excluded = profileExcludeRe != null && profileExcludeRe.containsMatchIn(name)
+            if (!included || excluded) return@mapNotNull null
+            profile.prefix + name
+        }
+    }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(profile.name, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "${finalNodes.size} 个节点",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
+        if (finalNodes.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text("暂无节点", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("请确保关联订阅已刷新且有匹配节点", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                items(finalNodes.size) { index ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            finalNodes[index],
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
@@ -1186,6 +1324,7 @@ private fun OutputsScreen(
     onEdit: (OutputProfileEntity) -> Unit,
     onDelete: (OutputProfileEntity) -> Unit,
     onCopied: () -> Unit,
+    onViewNodes: (OutputProfileEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lanAddress = remember { localLanAddress() }
@@ -1215,6 +1354,7 @@ private fun OutputsScreen(
                 onEdit = { onEdit(profile) },
                 onDelete = { onDelete(profile) },
                 onCopied = onCopied,
+                onViewNodes = { onViewNodes(profile) },
             )
         }
     }
@@ -1229,6 +1369,7 @@ private fun OutputCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onCopied: () -> Unit,
+    onViewNodes: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     iOSGroupedCard {
@@ -1250,6 +1391,7 @@ private fun OutputCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                iOSIconButton(Icons.Default.Visibility, "预览", onViewNodes)
                 iOSIconButton(Icons.Default.ContentCopy, "复制", {
                     clipboard.setText(AnnotatedString(url))
                     onCopied()

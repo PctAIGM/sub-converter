@@ -34,6 +34,8 @@ class SubscriptionRepository(
         val source = dao.getById(sourceId)
             ?: return RefreshOutcome(sourceId, success = false, message = "订阅不存在")
 
+        dao.update(source.copy(lastError = ""))
+
         return runCatching {
             val sourceUserAgent = source.userAgent.trim()
             val globalValue = globalUserAgent.trim().ifBlank { SubscriptionFetcher.DEFAULT_USER_AGENT }
