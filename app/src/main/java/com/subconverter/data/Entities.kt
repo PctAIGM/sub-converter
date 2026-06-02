@@ -49,4 +49,5 @@ data class OutputProfileEntity(
     val includeRegex: String = "",
     val excludeRegex: String = "",
     val updateIntervalHours: Int = 12,
+    val fetchCount: Long = 0,
 )

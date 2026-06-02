@@ -69,4 +69,7 @@ interface OutputProfileDao {
 
     @Delete
     suspend fun delete(profile: OutputProfileEntity)
+
+    @Query("UPDATE output_profiles SET fetchCount = fetchCount + 1 WHERE id = :id")
+    suspend fun incrementFetchCount(id: Long)
 }

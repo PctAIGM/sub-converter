@@ -116,6 +116,7 @@ class LocalHttpServer(
                         put("Content-Disposition", "attachment; filename=\"${rendered.profileTitle ?: "config"}.yaml\"")
                     }
                     writeResponse(client, 200, "text/yaml; charset=utf-8", rendered.yamlBody, headers)
+                    outputRepository.incrementFetchCount(id)
                 }
 
                 else -> writeResponse(client, 404, "text/plain; charset=utf-8", "Not Found")

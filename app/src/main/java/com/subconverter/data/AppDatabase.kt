@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TemplateEntity::class,
         OutputProfileEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -39,6 +39,12 @@ abstract class AppDatabase : RoomDatabase() {
         val Migration3To4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE subscription_sources ADD COLUMN website TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val Migration4To5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE output_profiles ADD COLUMN fetchCount INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

@@ -72,6 +72,10 @@ class OutputRepository(
         }
     }
 
+    suspend fun incrementFetchCount(profileId: Long) {
+        outputDao.incrementFetchCount(profileId)
+    }
+
     suspend fun addProfile(profile: OutputProfileEntity): Long = outputDao.insert(profile)
 
     suspend fun updateProfile(profile: OutputProfileEntity) {

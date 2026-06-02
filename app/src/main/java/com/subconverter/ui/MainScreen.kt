@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,6 +36,8 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -70,6 +73,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,8 +83,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -91,7 +98,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import com.subconverter.data.OutputProfileEntity
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
@@ -114,7 +126,7 @@ private enum class MainTab(
     Server("服务", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
-private enum class EditScreen { None, Source, Template, Output, Nodes, OutputNodes }
+private enum class EditScreen { None, Source, Template, Output, Nodes, OutputNodes, Scan, QrShare }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,6 +139,8 @@ fun MainScreen(viewModel: MainViewModel) {
     var editingProfile by remember { mutableStateOf<OutputProfileEntity?>(null) }
     var viewingSource by remember { mutableStateOf<SubscriptionSourceEntity?>(null) }
     var viewingProfile by remember { mutableStateOf<OutputProfileEntity?>(null) }
+    var scannedUrl by remember { mutableStateOf("") }
+    var sharingUrl by remember { mutableStateOf("") }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -145,6 +159,11 @@ fun MainScreen(viewModel: MainViewModel) {
                 actions = {
                     when (selectedTab) {
                         MainTab.Sources -> {
+                            IconButton(onClick = {
+                                editScreen = EditScreen.Scan
+                            }) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码添加")
+                            }
                             IconButton(onClick = {
                                 state.sources.forEach { viewModel.refreshSource(it.id) }
                             }) {
@@ -217,6 +236,10 @@ fun MainScreen(viewModel: MainViewModel) {
                     viewingProfile = it
                     editScreen = EditScreen.OutputNodes
                 },
+                onQrShare = {
+                    sharingUrl = it
+                    editScreen = EditScreen.QrShare
+                },
                 modifier = Modifier.padding(padding),
             )
 
@@ -243,6 +266,7 @@ fun MainScreen(viewModel: MainViewModel) {
     when (editScreen) {
         EditScreen.Source -> SourceEditScreen(
             source = editingSource,
+            initialUrl = scannedUrl,
             allSources = state.sources,
             onDismiss = { editScreen = EditScreen.None },
             onConfirm = { source, name, url, userAgent, prefix, include, exclude, auto, interval ->
@@ -285,6 +309,19 @@ fun MainScreen(viewModel: MainViewModel) {
                 onDismiss = { editScreen = EditScreen.None },
             )
         }
+
+        EditScreen.Scan -> QrScanScreen(
+            onScanned = { url ->
+                scannedUrl = url
+                editScreen = EditScreen.Source
+            },
+            onDismiss = { editScreen = EditScreen.None },
+        )
+
+        EditScreen.QrShare -> QrShareScreen(
+            url = sharingUrl,
+            onDismiss = { editScreen = EditScreen.None },
+        )
 
         EditScreen.None -> Unit
     }
@@ -330,12 +367,13 @@ private fun EditScreenScaffold(
 @Composable
 private fun SourceEditScreen(
     source: SubscriptionSourceEntity?,
+    initialUrl: String,
     allSources: List<SubscriptionSourceEntity>,
     onDismiss: () -> Unit,
     onConfirm: (SubscriptionSourceEntity?, String, String, String, String, String, String, Boolean, Long) -> Unit,
 ) {
     var name by rememberSaveable(source?.id) { mutableStateOf(source?.name.orEmpty()) }
-    var url by rememberSaveable(source?.id) { mutableStateOf(source?.url.orEmpty()) }
+    var url by rememberSaveable(source?.id) { mutableStateOf(source?.url.orEmpty().ifBlank { initialUrl }) }
     var userAgent by rememberSaveable(source?.id) { mutableStateOf(source?.userAgent.orEmpty()) }
     var prefix by rememberSaveable(source?.id) { mutableStateOf(source?.prefix.orEmpty()) }
     var include by rememberSaveable(source?.id) { mutableStateOf(source?.includeRegex.orEmpty()) }
@@ -1325,6 +1363,7 @@ private fun OutputsScreen(
     onDelete: (OutputProfileEntity) -> Unit,
     onCopied: () -> Unit,
     onViewNodes: (OutputProfileEntity) -> Unit,
+    onQrShare: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lanAddress = remember { localLanAddress() }
@@ -1355,6 +1394,7 @@ private fun OutputsScreen(
                 onDelete = { onDelete(profile) },
                 onCopied = onCopied,
                 onViewNodes = { onViewNodes(profile) },
+                onQrShare = { onQrShare(url) },
             )
         }
     }
@@ -1370,6 +1410,7 @@ private fun OutputCard(
     onDelete: () -> Unit,
     onCopied: () -> Unit,
     onViewNodes: () -> Unit,
+    onQrShare: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     iOSGroupedCard {
@@ -1390,8 +1431,16 @@ private fun OutputCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (profile.fetchCount > 0) {
+                        Text(
+                            "已拉取 ${profile.fetchCount} 次",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 iOSIconButton(Icons.Default.Visibility, "预览", onViewNodes)
+                iOSIconButton(Icons.Default.QrCode, "二维码", onQrShare)
                 iOSIconButton(Icons.Default.ContentCopy, "复制", {
                     clipboard.setText(AnnotatedString(url))
                     onCopied()
@@ -1950,6 +1999,194 @@ private fun TemplateDropdown(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QrScanScreen(
+    onScanned: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var hasPermission by remember { mutableStateOf(false) }
+    var scanned by remember { mutableStateOf(false) }
+
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted -> hasPermission = granted }
+
+    LaunchedEffect(Unit) {
+        val permission = android.Manifest.permission.CAMERA
+        hasPermission = ContextCompat.checkSelfPermission(context, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) launcher.launch(permission)
+    }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text("扫描二维码", style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
+        if (!hasPermission) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text("需要相机权限", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { launcher.launch(android.Manifest.permission.CAMERA) }) {
+                    Text("授予权限")
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                val cameraProviderFuture = remember {
+                    androidx.camera.lifecycle.ProcessCameraProvider.getInstance(context)
+                }
+                AndroidView(
+                    factory = { ctx ->
+                        val previewView = androidx.camera.view.PreviewView(ctx)
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = androidx.camera.core.Preview.Builder().build()
+                        val selector = androidx.camera.core.CameraSelector.Builder()
+                            .requireLensFacing(androidx.camera.core.CameraSelector.LENS_FACING_BACK)
+                            .build()
+                        preview.setSurfaceProvider(previewView.surfaceProvider)
+                        val analyzer = androidx.camera.core.ImageAnalysis.Builder()
+                            .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                        analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                            if (scanned) {
+                                imageProxy.close()
+                                return@setAnalyzer
+                            }
+                            val mediaImage = imageProxy.image
+                            if (mediaImage != null) {
+                                val inputImage = InputImage.fromMediaImage(
+                                    mediaImage, imageProxy.imageInfo.rotationDegrees,
+                                )
+                                BarcodeScanning.getClient().process(inputImage)
+                                    .addOnSuccessListener { barcodes ->
+                                        val url = barcodes.firstOrNull()?.rawValue
+                                        if (url != null) {
+                                            scanned = true
+                                            onScanned(url)
+                                        }
+                                    }
+                                    .addOnCompleteListener { imageProxy.close() }
+                            } else {
+                                imageProxy.close()
+                            }
+                        }
+                        cameraProvider.unbindAll()
+                        cameraProvider.bindToLifecycle(
+                            ctx as androidx.activity.ComponentActivity,
+                            selector,
+                            preview,
+                            analyzer,
+                        )
+                        previewView
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QrShareScreen(
+    url: String,
+    onDismiss: () -> Unit,
+) {
+    val qrBitmap = remember(url) { generateQrBitmap(url) }
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text("二维码分享", style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White,
+                modifier = Modifier.size(260.dp),
+            ) {
+                androidx.compose.foundation.Image(
+                    bitmap = qrBitmap,
+                    contentDescription = "QR Code",
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .aspectRatio(1f),
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                url,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+        }
+    }
+}
+
+private fun generateQrBitmap(content: String): ImageBitmap {
+    val hints = mapOf(com.google.zxing.EncodeHintType.MARGIN to 1)
+    val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(
+        content, com.google.zxing.BarcodeFormat.QR_CODE, 512, 512, hints,
+    )
+    val width = matrix.width
+    val height = matrix.height
+    val pixels = IntArray(width * height)
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            pixels[y * width + x] = if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        }
+    }
+    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+    bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+    return bitmap.asImageBitmap()
 }
 
 private fun extractNodeNames(yamlBody: String): List<String> {
