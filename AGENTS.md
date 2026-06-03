@@ -9,6 +9,8 @@ Project conventions for AI agents working on this codebase.
 ./gradlew assembleRelease        # Release APK (no minification)
 ```
 
+After modify , using `./gradlew assembleDebug` to build the `Debug` APK.
+
 ## Architecture
 
 MVVM, single-activity, Jetpack Compose UI. Layers: `core/` (DI), `data/` (Room, DataStore), `domain/` (repos, services, fetchers), `server/` (raw socket HTTP), `ui/` (Compose screens + ViewModel).

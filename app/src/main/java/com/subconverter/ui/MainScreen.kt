@@ -106,6 +106,9 @@ import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
 import com.subconverter.data.settings.ServerSettings
 import com.subconverter.domain.DEFAULT_MIHOMO_TEMPLATE
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.text.SimpleDateFormat
@@ -422,15 +425,12 @@ private fun SourceEditScreen(
                     SmallFormField("节点前缀", prefix, { prefix = it }, "添加到节点名前，如: [A] ")
                     FieldDivider()
                     SmallFormField("保留正则", include, { include = it }, "如: 香港|台湾")
-                    if (nodeNames.isNotEmpty()) {
-                        RegexPreview(nodeNames, include, exclude)
-                    } else {
-                        RegexHint()
-                    }
                     FieldDivider()
                     SmallFormField("排除正则", exclude, { exclude = it }, "如: 实验|过期|流量")
                     if (nodeNames.isNotEmpty()) {
                         RegexPreview(nodeNames, include, exclude)
+                    } else {
+                        RegexHint()
                     }
                 }
             }
@@ -546,10 +546,15 @@ private fun OutputEditScreen(
     var exclude by rememberSaveable(profile?.id) { mutableStateOf(profile?.excludeRegex.orEmpty()) }
     var interval by rememberSaveable(profile?.id) { mutableStateOf((profile?.updateIntervalHours ?: 12).toString()) }
 
-    val selectedSet = selectedSourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+    val selectedSet = remember(selectedSourceIds) {
+        selectedSourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+    }
+    val selectedSources = remember(sources, selectedSet) {
+        sources.filter { it.id in selectedSet }
+    }
 
-    val mergedNodeNames = remember(sources.filter { it.id in selectedSet }.map { it.cachedYaml }) {
-        sources.filter { it.id in selectedSet }.flatMap { src ->
+    val mergedNodeNames = remember(selectedSources) {
+        selectedSources.flatMap { src ->
             val names = extractNodeNames(src.cachedYaml.orEmpty())
             val srcInc = src.includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
             val srcExc = src.excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
@@ -649,15 +654,12 @@ private fun OutputEditScreen(
                     SmallFormField("节点前缀", prefix, { prefix = it }, "添加到节点名前")
                     FieldDivider()
                     SmallFormField("保留正则", include, { include = it }, "如: 香港|台湾|日本")
-                    if (mergedNodeNames.isNotEmpty()) {
-                        RegexPreview(mergedNodeNames, include, exclude)
-                    } else {
-                        RegexHint()
-                    }
                     FieldDivider()
                     SmallFormField("排除正则", exclude, { exclude = it }, "如: 实验|过期")
                     if (mergedNodeNames.isNotEmpty()) {
                         RegexPreview(mergedNodeNames, include, exclude)
+                    } else {
+                        RegexHint()
                     }
                 }
             }
@@ -1021,21 +1023,43 @@ private fun RegexHint() {
     }
 }
 
+private const val REGEX_PREVIEW_LIMIT = 20
+
+private data class RegexPreviewItem(
+    val name: String,
+    val matched: Boolean,
+)
+
+private data class RegexPreviewUiState(
+    val items: List<RegexPreviewItem> = emptyList(),
+    val matchCount: Int = 0,
+    val hasRegexError: Boolean = false,
+    val isCalculating: Boolean = false,
+)
+
 @Composable
 private fun RegexPreview(nodeNames: List<String>, includeRegex: String, excludeRegex: String) {
-    val filtered = remember(nodeNames, includeRegex, excludeRegex) {
-        val includeRe = if (includeRegex.isNotBlank()) runCatching { Regex(includeRegex) }.getOrNull() else null
-        val excludeRe = if (excludeRegex.isNotBlank()) runCatching { Regex(excludeRegex) }.getOrNull() else null
-        val isIncludeError = includeRegex.isNotBlank() && includeRe == null
-        val isExcludeError = excludeRegex.isNotBlank() && excludeRe == null
+    var preview by remember(nodeNames) {
+        mutableStateOf(RegexPreviewUiState(isCalculating = true))
+    }
 
-        val results = nodeNames.map { name ->
-            val included = includeRe == null || includeRe.containsMatchIn(name)
-            val excluded = excludeRe != null && excludeRe.containsMatchIn(name)
-            Triple(name, included && !excluded, isIncludeError || isExcludeError)
+    LaunchedEffect(nodeNames, includeRegex, excludeRegex) {
+        preview = preview.copy(isCalculating = true, hasRegexError = false)
+        delay(160)
+        preview = withContext(Dispatchers.Default) {
+            calculateRegexPreview(nodeNames, includeRegex, excludeRegex)
         }
-        val matchCount = results.count { it.second }
-        Pair(results, matchCount)
+    }
+
+    val summaryText = when {
+        preview.isCalculating -> "预览计算中..."
+        preview.hasRegexError -> "预览: 正则表达式有误"
+        else -> "预览: ${preview.matchCount}/${nodeNames.size} 个节点匹配"
+    }
+    val summaryColor = if (preview.hasRegexError && !preview.isCalculating) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1044,14 +1068,14 @@ private fun RegexPreview(nodeNames: List<String>, includeRegex: String, excludeR
                 Icons.Default.FilterAlt,
                 contentDescription = null,
                 modifier = Modifier.size(12.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                tint = summaryColor.copy(alpha = 0.6f),
             )
             Spacer(Modifier.width(4.dp))
             Text(
-                "预览: ${filtered.second}/${nodeNames.size} 个节点匹配",
+                summaryText,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = summaryColor,
             )
         }
         Column(
@@ -1062,31 +1086,80 @@ private fun RegexPreview(nodeNames: List<String>, includeRegex: String, excludeR
                 .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            filtered.first.take(20).forEach { (name, matched, error) ->
+            if (preview.items.isEmpty()) {
                 Text(
-                    text = name,
+                    text = "正在计算预览...",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            preview.items.forEach { item ->
+                Text(
+                    text = item.name,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontSize = 10.sp,
                         lineHeight = 14.sp,
                     ),
                     color = when {
-                        error -> MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-                        matched -> MaterialTheme.colorScheme.primary
+                        preview.hasRegexError -> MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                        item.matched -> MaterialTheme.colorScheme.primary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                     },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (nodeNames.size > 20) {
+            if (!preview.isCalculating && nodeNames.size > preview.items.size) {
                 Text(
-                    "... 还有 ${nodeNames.size - 20} 个节点",
+                    "... 还有 ${nodeNames.size - preview.items.size} 个节点",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 )
             }
         }
     }
+}
+
+private fun calculateRegexPreview(
+    nodeNames: List<String>,
+    includeRegex: String,
+    excludeRegex: String,
+): RegexPreviewUiState {
+    val includeRe = includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+    val excludeRe = excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+    val hasRegexError = (includeRegex.isNotBlank() && includeRe == null) ||
+        (excludeRegex.isNotBlank() && excludeRe == null)
+
+    if (hasRegexError) {
+        return RegexPreviewUiState(
+            items = nodeNames.take(REGEX_PREVIEW_LIMIT).map { RegexPreviewItem(name = it, matched = false) },
+            hasRegexError = true,
+        )
+    }
+
+    val items = ArrayList<RegexPreviewItem>(minOf(nodeNames.size, REGEX_PREVIEW_LIMIT))
+    var matchCount = 0
+    nodeNames.forEach { name ->
+        val included = includeRe == null || includeRe.containsMatchIn(name)
+        val excluded = excludeRe != null && excludeRe.containsMatchIn(name)
+        val matched = included && !excluded
+        if (matched) {
+            matchCount += 1
+        }
+        if (items.size < REGEX_PREVIEW_LIMIT) {
+            items += RegexPreviewItem(name = name, matched = matched)
+        }
+    }
+
+    return RegexPreviewUiState(
+        items = items,
+        matchCount = matchCount,
+    )
 }
 
 @Composable
