@@ -33,6 +33,9 @@ data class TemplateEntity(
     val yamlBody: String,
     val remoteUrl: String = "",
     val isDefault: Boolean = false,
+    val enabled: Boolean = true,
+    val global: Boolean = false,
+    val sortOrder: Int = 0,
     val lastRefreshAt: Long? = null,
     val lastError: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
@@ -48,6 +51,7 @@ data class OutputProfileEntity(
     val prefix: String = "",
     val includeRegex: String = "",
     val excludeRegex: String = "",
+    val overrideIds: String = "",
     val updateIntervalHours: Int = 12,
     val fetchCount: Long = 0,
 )

@@ -18,22 +18,31 @@ class OutputRepository(
     val templates: Flow<List<TemplateEntity>> = templateDao.observeAll()
     val profiles: Flow<List<OutputProfileEntity>> = outputDao.observeAll()
 
-    suspend fun ensureDefaultTemplate() {
-        if (templateDao.count() == 0) {
-            templateDao.insert(
-                TemplateEntity(
-                    name = DEFAULT_TEMPLATE_NAME,
-                    yamlBody = DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
-                    isDefault = true,
-                ),
-            )
-        }
-    }
-
-    suspend fun addTemplate(template: TemplateEntity): Long = templateDao.insert(template)
+    suspend fun addTemplate(template: TemplateEntity): Long =
+        templateDao.insert(
+            template.copy(
+                sortOrder = templateDao.maxSortOrder() + 10,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
 
     suspend fun updateTemplate(template: TemplateEntity) {
         templateDao.update(template.copy(updatedAt = System.currentTimeMillis()))
+    }
+
+    suspend fun moveTemplate(templateId: Long, offset: Int) {
+        val templates = templateDao.getAll()
+        val currentIndex = templates.indexOfFirst { it.id == templateId }
+        if (currentIndex < 0) return
+        val targetIndex = (currentIndex + offset).coerceIn(0, templates.lastIndex)
+        if (currentIndex == targetIndex) return
+
+        val reordered = templates.toMutableList()
+        val item = reordered.removeAt(currentIndex)
+        reordered.add(targetIndex, item)
+        reordered.forEachIndexed { index, template ->
+            templateDao.update(template.copy(sortOrder = (index + 1) * 10))
+        }
     }
 
     suspend fun deleteTemplate(template: TemplateEntity) {
@@ -42,15 +51,18 @@ class OutputRepository(
 
     suspend fun refreshTemplate(templateId: Long): RefreshOutcome {
         val template = templateDao.getById(templateId)
-            ?: return RefreshOutcome(templateId, success = false, message = "模板不存在")
+            ?: return RefreshOutcome(templateId, success = false, message = "覆写不存在")
         if (template.remoteUrl.isBlank()) {
-            return RefreshOutcome(templateId, success = false, message = "模板没有远程地址")
+            return RefreshOutcome(templateId, success = false, message = "覆写没有远程地址")
         }
 
         templateDao.update(template.copy(lastError = ""))
 
         return runCatching {
             val body = remoteTextFetcher.fetch(template.remoteUrl)
+            yamlService.validateOverrideYaml(body)?.let { error ->
+                throw IllegalArgumentException(error)
+            }
             templateDao.update(
                 template.copy(
                     yamlBody = body,
@@ -59,7 +71,7 @@ class OutputRepository(
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
-            RefreshOutcome(templateId, success = true, message = "模板刷新成功")
+            RefreshOutcome(templateId, success = true, message = "覆写刷新成功")
         }.getOrElse { throwable ->
             templateDao.update(
                 template.copy(
@@ -68,7 +80,7 @@ class OutputRepository(
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
-            RefreshOutcome(templateId, success = false, message = throwable.message ?: "模板刷新失败")
+            RefreshOutcome(templateId, success = false, message = throwable.message ?: "覆写刷新失败")
         }
     }
 
@@ -88,7 +100,6 @@ class OutputRepository(
 
     suspend fun renderProfile(profileId: Long): RenderedSubscription? {
         val profile = outputDao.getById(profileId)?.takeIf { it.enabled } ?: return null
-        val template = templateDao.getById(profile.templateId) ?: templateDao.getAll().firstOrNull()
         val sourceIds = profile.sourceIds
             .split(',')
             .mapNotNull { it.trim().toLongOrNull() }
@@ -109,18 +120,25 @@ class OutputRepository(
             )
         }
 
-        val outputProxies = yamlService.transformProxies(
-            proxies = sourceProxies,
-            rules = TransformRules(
-                prefix = profile.prefix,
-                includeRegex = profile.includeRegex,
-                excludeRegex = profile.excludeRegex,
-            ),
-        )
+        val allOverrides = templateDao.getAll()
+        val selectedOverrideIds = parseIds(profile.overrideIds)
+        val selectedOverrides = selectedOverrideIds.mapNotNull { id ->
+            allOverrides.firstOrNull { it.id == id }
+        }
+        val usedOverrideIds = mutableSetOf<Long>()
+        val overrideYamls = buildList {
+            (allOverrides.filter { it.global } + selectedOverrides).forEach { overrideItem ->
+                if (overrideItem.enabled && overrideItem.id !in usedOverrideIds) {
+                    usedOverrideIds += overrideItem.id
+                    add(overrideItem.yamlBody)
+                }
+            }
+        }
 
         val body = yamlService.renderTemplate(
-            templateYaml = template?.yamlBody ?: DEFAULT_MIHOMO_TEMPLATE,
-            proxies = outputProxies,
+            templateYaml = DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
+            proxies = sourceProxies,
+            overrideYamls = overrideYamls,
         )
 
         val profileTitle = profile.name.takeIf { it.isNotBlank() }
@@ -135,6 +153,9 @@ class OutputRepository(
             profileWebPageUrl = profileWebPageUrl,
         )
     }
+
+    private fun parseIds(rawIds: String): List<Long> =
+        rawIds.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
 
     private fun aggregateUserInfo(sources: List<SubscriptionSourceEntity>): SubscriptionUserInfo? {
         val infos = sources.mapNotNull { it.userInfo() }

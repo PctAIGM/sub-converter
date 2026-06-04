@@ -31,17 +31,17 @@ interface SubscriptionSourceDao {
 
 @Dao
 interface TemplateDao {
-    @Query("SELECT * FROM templates ORDER BY isDefault DESC, id DESC")
+    @Query("SELECT * FROM templates ORDER BY sortOrder ASC, id ASC")
     fun observeAll(): Flow<List<TemplateEntity>>
 
-    @Query("SELECT * FROM templates ORDER BY isDefault DESC, id DESC")
+    @Query("SELECT * FROM templates ORDER BY sortOrder ASC, id ASC")
     suspend fun getAll(): List<TemplateEntity>
 
     @Query("SELECT * FROM templates WHERE id = :id")
     suspend fun getById(id: Long): TemplateEntity?
 
-    @Query("SELECT COUNT(*) FROM templates")
-    suspend fun count(): Int
+    @Query("SELECT COALESCE(MAX(sortOrder), 0) FROM templates")
+    suspend fun maxSortOrder(): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(template: TemplateEntity): Long

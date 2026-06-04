@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TemplateEntity::class,
         OutputProfileEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,6 +45,16 @@ abstract class AppDatabase : RoomDatabase() {
         val Migration4To5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE output_profiles ADD COLUMN fetchCount INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val Migration5To6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE templates ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE templates ADD COLUMN global INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE templates ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE templates SET sortOrder = id")
+                db.execSQL("ALTER TABLE output_profiles ADD COLUMN overrideIds TEXT NOT NULL DEFAULT ''")
             }
         }
     }

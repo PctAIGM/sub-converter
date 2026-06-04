@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode
@@ -51,8 +53,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -61,7 +61,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -105,7 +104,7 @@ import com.subconverter.data.OutputProfileEntity
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
 import com.subconverter.data.settings.ServerSettings
-import com.subconverter.domain.DEFAULT_MIHOMO_TEMPLATE
+import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -122,7 +121,7 @@ private enum class MainTab(
 ) {
     Sources("订阅", Icons.Filled.CloudDownload, Icons.Outlined.CloudDownload),
     Outputs("输出", Icons.Filled.Dns, Icons.Outlined.Dns),
-    Templates("模板", Icons.AutoMirrored.Filled.Article, Icons.AutoMirrored.Outlined.Article),
+    Templates("覆写", Icons.AutoMirrored.Filled.Article, Icons.AutoMirrored.Outlined.Article),
     Server("服务", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
@@ -193,7 +192,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                 editingTemplate = null
                                 editScreen = EditScreen.Template
                             }) {
-                                Icon(Icons.Default.Add, contentDescription = "添加模板")
+                                Icon(Icons.Default.Add, contentDescription = "添加覆写")
                             }
                         }
                         MainTab.Server -> Unit
@@ -255,6 +254,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     editScreen = EditScreen.Template
                 },
                 onDelete = viewModel::deleteTemplate,
+                onMove = viewModel::moveTemplate,
                 modifier = Modifier.padding(padding),
             )
 
@@ -286,8 +286,8 @@ fun MainScreen(viewModel: MainViewModel) {
         EditScreen.Template -> TemplateEditScreen(
             template = editingTemplate,
             onDismiss = { editScreen = EditScreen.None },
-            onConfirm = { template, name, remoteUrl, body ->
-                viewModel.saveTemplate(template, name, remoteUrl, body)
+            onConfirm = { template, name, remoteUrl, body, enabled, global ->
+                viewModel.saveTemplate(template, name, remoteUrl, body, enabled, global)
                 editScreen = EditScreen.None
             },
         )
@@ -297,8 +297,8 @@ fun MainScreen(viewModel: MainViewModel) {
             sources = state.sources,
             templates = state.templates,
             onDismiss = { editScreen = EditScreen.None },
-            onConfirm = { profile, name, sourceIds, templateId, prefix, include, exclude, interval ->
-                viewModel.saveProfile(profile, name, sourceIds, templateId, prefix, include, exclude, interval)
+            onConfirm = { profile, name, sourceIds, overrideIds, interval ->
+                viewModel.saveProfile(profile, name, sourceIds, overrideIds, interval)
                 editScreen = EditScreen.None
             },
         )
@@ -470,18 +470,20 @@ private fun SourceEditScreen(
 private fun TemplateEditScreen(
     template: TemplateEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (TemplateEntity?, String, String, String) -> Unit,
+    onConfirm: (TemplateEntity?, String, String, String, Boolean, Boolean) -> Unit,
 ) {
-    var name by rememberSaveable(template?.id) { mutableStateOf(template?.name ?: "Mihomo Template") }
+    var name by rememberSaveable(template?.id) { mutableStateOf(template?.name ?: "YAML 覆写") }
     var remoteUrl by rememberSaveable(template?.id) { mutableStateOf(template?.remoteUrl.orEmpty()) }
+    var enabled by rememberSaveable(template?.id) { mutableStateOf(template?.enabled ?: true) }
+    var global by rememberSaveable(template?.id) { mutableStateOf(template?.global ?: false) }
     var body by rememberSaveable(template?.id) {
-        mutableStateOf(template?.yamlBody ?: DEFAULT_MIHOMO_TEMPLATE.trimIndent())
+        mutableStateOf(template?.yamlBody ?: DEFAULT_OVERRIDE_YAML.trimIndent())
     }
 
     EditScreenScaffold(
-        title = if (template == null) "添加模板" else "编辑模板",
+        title = if (template == null) "添加覆写" else "编辑覆写",
         onDismiss = onDismiss,
-        onSave = { onConfirm(template, name, remoteUrl, body) },
+        onSave = { onConfirm(template, name, remoteUrl, body, enabled, global) },
         saveEnabled = name.isNotBlank(),
     ) { padding ->
         LazyColumn(
@@ -494,9 +496,13 @@ private fun TemplateEditScreen(
         ) {
             item {
                 iOSGroupedCard {
-                    SmallFormField("名称", name, { name = it }, "模板名称")
+                    SmallFormField("名称", name, { name = it }, "覆写名称")
                     FieldDivider()
-                    SmallFormField("远程 URL", remoteUrl, { remoteUrl = it }, "留空为纯本地模板")
+                    SmallFormField("远程 URL", remoteUrl, { remoteUrl = it }, "留空为本地覆写")
+                    FieldDivider()
+                    iOSFormSwitch("启用覆写", "关闭后不会参与任何输出", enabled, { enabled = it })
+                    FieldDivider()
+                    iOSFormSwitch("全局覆写", "开启后自动应用到所有输出", global, { global = it })
                 }
             }
             item {
@@ -532,36 +538,22 @@ private fun OutputEditScreen(
     sources: List<SubscriptionSourceEntity>,
     templates: List<TemplateEntity>,
     onDismiss: () -> Unit,
-    onConfirm: (OutputProfileEntity?, String, List<Long>, Long, String, String, String, Int) -> Unit,
+    onConfirm: (OutputProfileEntity?, String, List<Long>, List<Long>, Int) -> Unit,
 ) {
     var name by rememberSaveable(profile?.id) { mutableStateOf(profile?.name ?: "Mihomo Output") }
     var selectedSourceIds by rememberSaveable(profile?.id, sources.size) {
         mutableStateOf(profile?.sourceIds ?: sources.joinToString(",") { it.id.toString() })
     }
-    var selectedTemplateId by rememberSaveable(profile?.id, templates.size) {
-        mutableStateOf(profile?.templateId ?: (templates.firstOrNull()?.id ?: 0L))
+    var selectedOverrideIds by rememberSaveable(profile?.id, templates.size) {
+        mutableStateOf(profile?.overrideIds.orEmpty())
     }
-    var prefix by rememberSaveable(profile?.id) { mutableStateOf(profile?.prefix.orEmpty()) }
-    var include by rememberSaveable(profile?.id) { mutableStateOf(profile?.includeRegex.orEmpty()) }
-    var exclude by rememberSaveable(profile?.id) { mutableStateOf(profile?.excludeRegex.orEmpty()) }
     var interval by rememberSaveable(profile?.id) { mutableStateOf((profile?.updateIntervalHours ?: 12).toString()) }
 
     val selectedSet = remember(selectedSourceIds) {
         selectedSourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
     }
-    val selectedSources = remember(sources, selectedSet) {
-        sources.filter { it.id in selectedSet }
-    }
-
-    val mergedNodeNames = remember(selectedSources) {
-        selectedSources.flatMap { src ->
-            val names = extractNodeNames(src.cachedYaml.orEmpty())
-            val srcInc = src.includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
-            val srcExc = src.excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
-            names.filter { name ->
-                (srcInc == null || srcInc.containsMatchIn(name)) && !(srcExc != null && srcExc.containsMatchIn(name))
-            }.map { src.prefix + it }
-        }
+    val selectedOverrideIdList = remember(selectedOverrideIds) {
+        parseIdList(selectedOverrideIds)
     }
 
     EditScreenScaffold(
@@ -572,14 +564,11 @@ private fun OutputEditScreen(
                 profile,
                 name,
                 selectedSourceIds.split(',').mapNotNull { it.trim().toLongOrNull() },
-                selectedTemplateId,
-                prefix,
-                include,
-                exclude,
+                selectedOverrideIdList,
                 interval.toIntOrNull() ?: 12,
             )
         },
-        saveEnabled = name.isNotBlank() && selectedTemplateId > 0 && selectedSet.isNotEmpty(),
+        saveEnabled = name.isNotBlank() && selectedSet.isNotEmpty(),
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -644,23 +633,15 @@ private fun OutputEditScreen(
             }
 
             item {
-                SectionHeader("模板")
-                TemplateDropdown(templates, selectedTemplateId) { selectedTemplateId = it }
-            }
-
-            item {
-                SectionHeader("节点筛选")
+                SectionHeader("专属覆写")
                 iOSGroupedCard {
-                    SmallFormField("节点前缀", prefix, { prefix = it }, "添加到节点名前")
-                    FieldDivider()
-                    SmallFormField("保留正则", include, { include = it }, "如: 香港|台湾|日本")
-                    FieldDivider()
-                    SmallFormField("排除正则", exclude, { exclude = it }, "如: 实验|过期")
-                    if (mergedNodeNames.isNotEmpty()) {
-                        RegexPreview(mergedNodeNames, include, exclude)
-                    } else {
-                        RegexHint()
-                    }
+                    OverrideSelectionList(
+                        overrides = templates,
+                        selectedIds = selectedOverrideIdList,
+                        onSelectedIdsChange = { ids ->
+                            selectedOverrideIds = ids.joinToString(",")
+                        },
+                    )
                 }
             }
 
@@ -668,6 +649,116 @@ private fun OutputEditScreen(
                 iOSGroupedCard {
                     SmallFormField("更新间隔（小时）", interval, { interval = it.filter(Char::isDigit).take(4) }, "12")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverrideSelectionList(
+    overrides: List<TemplateEntity>,
+    selectedIds: List<Long>,
+    onSelectedIdsChange: (List<Long>) -> Unit,
+) {
+    if (overrides.isEmpty()) {
+        Text(
+            "请先添加覆写",
+            modifier = Modifier.padding(14.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    val selectedSet = selectedIds.toSet()
+    val selectedOverrides = selectedIds.mapNotNull { id -> overrides.firstOrNull { it.id == id } }
+    val unselectedOverrides = overrides.filter { it.id !in selectedSet }
+
+    if (selectedOverrides.isEmpty()) {
+        Text(
+            "未选择专属覆写，将只应用全局覆写",
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    selectedOverrides.forEachIndexed { index, overrideItem ->
+        OverrideSelectionRow(
+            overrideItem = overrideItem,
+            selected = true,
+            canMoveUp = index > 0,
+            canMoveDown = index < selectedOverrides.lastIndex,
+            onToggle = { onSelectedIdsChange(selectedIds.filterNot { it == overrideItem.id }) },
+            onMoveUp = { onSelectedIdsChange(moveId(selectedIds, overrideItem.id, -1)) },
+            onMoveDown = { onSelectedIdsChange(moveId(selectedIds, overrideItem.id, 1)) },
+        )
+        if (index < selectedOverrides.lastIndex || unselectedOverrides.isNotEmpty()) {
+            FieldDivider()
+        }
+    }
+
+    unselectedOverrides.forEachIndexed { index, overrideItem ->
+        OverrideSelectionRow(
+            overrideItem = overrideItem,
+            selected = false,
+            canMoveUp = false,
+            canMoveDown = false,
+            onToggle = { onSelectedIdsChange(selectedIds + overrideItem.id) },
+            onMoveUp = {},
+            onMoveDown = {},
+        )
+        if (index < unselectedOverrides.lastIndex) {
+            FieldDivider()
+        }
+    }
+}
+
+@Composable
+private fun OverrideSelectionRow(
+    overrideItem: TemplateEntity,
+    selected: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onToggle: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = selected,
+            onCheckedChange = { onToggle() },
+            modifier = Modifier.size(20.dp),
+            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                overrideItem.name,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                overrideStateText(overrideItem),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (selected) {
+            IconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移", modifier = Modifier.size(18.dp))
+            }
+            IconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移", modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -847,18 +938,6 @@ private fun OutputNodePreviewScreen(
         }
     }
 
-    val profileIncludeRe = profile.includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
-    val profileExcludeRe = profile.excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
-
-    val finalNodes = remember(allNodes, profile.includeRegex, profile.excludeRegex, profile.prefix) {
-        allNodes.mapNotNull { name ->
-            val included = profileIncludeRe == null || profileIncludeRe.containsMatchIn(name)
-            val excluded = profileExcludeRe != null && profileExcludeRe.containsMatchIn(name)
-            if (!included || excluded) return@mapNotNull null
-            profile.prefix + name
-        }
-    }
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -867,7 +946,7 @@ private fun OutputNodePreviewScreen(
                     Column {
                         Text(profile.name, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "${finalNodes.size} 个节点",
+                            "${allNodes.size} 个节点",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -884,7 +963,7 @@ private fun OutputNodePreviewScreen(
             )
         },
     ) { padding ->
-        if (finalNodes.isEmpty()) {
+        if (allNodes.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -906,7 +985,7 @@ private fun OutputNodePreviewScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                items(finalNodes.size) { index ->
+                items(allNodes.size) { index ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -923,7 +1002,7 @@ private fun OutputNodePreviewScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            finalNodes[index],
+                            allNodes[index],
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1503,7 +1582,7 @@ private fun OutputCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "${sourceNames(profile, sources)} · ${templateName(profile.templateId, templates)}",
+                        "${sourceNames(profile, sources)} · ${overrideSummary(profile, templates)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1566,6 +1645,7 @@ private fun TemplatesScreen(
     onRefresh: (Long) -> Unit,
     onEdit: (TemplateEntity) -> Unit,
     onDelete: (TemplateEntity) -> Unit,
+    onMove: (Long, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -1579,17 +1659,22 @@ private fun TemplatesScreen(
             item {
                 iOSEmptyState(
                     icon = Icons.AutoMirrored.Outlined.Article,
-                    title = "还没有模板",
-                    subtitle = "点击右上角 + 创建配置模板",
+                    title = "还没有覆写",
+                    subtitle = "点击右上角 + 创建 YAML 覆写",
                 )
             }
         }
-        items(templates, key = { it.id }) { template ->
+        items(templates.size, key = { templates[it].id }) { index ->
+            val template = templates[index]
             TemplateCard(
                 template = template,
                 onRefresh = { onRefresh(template.id) },
                 onEdit = { onEdit(template) },
                 onDelete = { onDelete(template) },
+                onMoveUp = { onMove(template.id, -1) },
+                onMoveDown = { onMove(template.id, 1) },
+                canMoveUp = index > 0,
+                canMoveDown = index < templates.lastIndex,
             )
         }
     }
@@ -1601,6 +1686,10 @@ private fun TemplateCard(
     onRefresh: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
 ) {
     iOSGroupedCard {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1617,10 +1706,16 @@ private fun TemplateCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        templateRefreshText(template),
+                        overrideCardSubtitle(template),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                IconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移", modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移", modifier = Modifier.size(18.dp))
                 }
                 if (template.remoteUrl.isNotBlank()) {
                     iOSIconButton(Icons.Default.Refresh, "刷新", onRefresh)
@@ -1698,7 +1793,12 @@ private fun ServerScreen(
     var token by rememberSaveable(settings.token) { mutableStateOf(settings.token) }
     var allowLan by rememberSaveable(settings.allowLan) { mutableStateOf(settings.allowLan) }
     var globalUserAgent by rememberSaveable(settings.globalUserAgent) { mutableStateOf(settings.globalUserAgent) }
-    val lanAddress = remember { localLanAddress() }
+    val lanAddress = remember(allowLan) { if (allowLan) localLanAddress() else null }
+    val allowLanDescription = if (allowLan) {
+        "已开启，使用 ${lanAddress ?: "手机局域网 IP"} 分享"
+    } else {
+        "关闭时仅本机访问，开启后显示局域网地址"
+    }
     val previewSettings = settings.copy(
         port = port.toIntOrNull() ?: settings.port,
         token = token,
@@ -1742,7 +1842,7 @@ private fun ServerScreen(
             iOSGroupedCard {
                 iOSFormSwitch(
                     "允许局域网访问",
-                    "开启后使用 ${lanAddress ?: "手机局域网 IP"} 分享",
+                    allowLanDescription,
                     allowLan,
                     { allowLan = it },
                 )
@@ -2023,62 +2123,6 @@ private fun iOSEmptyState(
     }
 }
 
-@Composable
-private fun TemplateDropdown(
-    templates: List<TemplateEntity>,
-    selectedTemplateId: Long,
-    onSelected: (Long) -> Unit,
-) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    val selected = templates.firstOrNull { it.id == selectedTemplateId }
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            Text(
-                selected?.name ?: "选择模板",
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Start,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            templates.forEach { template ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(template.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                            if (template.id == selectedTemplateId) {
-                                Icon(
-                                    Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        onSelected(template.id)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QrScanScreen(
@@ -2319,11 +2363,14 @@ private fun trafficText(source: SubscriptionSourceEntity): String {
     return "已用 $used / 剩余 $remaining / 总量 $total"
 }
 
-private fun templateRefreshText(template: TemplateEntity): String {
+private fun overrideCardSubtitle(template: TemplateEntity): String {
     val refreshTime = template.lastRefreshAt?.let {
         SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))
     } ?: "未刷新"
-    return if (template.remoteUrl.isBlank()) "本地模板" else "远程模板 · $refreshTime"
+    return listOf(
+        overrideStateText(template),
+        if (template.remoteUrl.isBlank()) "本地覆写" else "远程覆写 · $refreshTime",
+    ).joinToString(" · ")
 }
 
 private fun formatBytes(bytes: Long): String {
@@ -2338,14 +2385,46 @@ private fun formatBytes(bytes: Long): String {
 }
 
 private fun sourceNames(profile: OutputProfileEntity, sources: List<SubscriptionSourceEntity>): String {
-    val ids = profile.sourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }
+    val ids = parseIdList(profile.sourceIds)
     val names = ids.map { id -> sources.firstOrNull { it.id == id }?.name ?: "#$id" }
     return "订阅源: ${names.joinToString("、")}"
 }
 
-private fun templateName(templateId: Long, templates: List<TemplateEntity>): String {
-    val name = templates.firstOrNull { it.id == templateId }?.name ?: "#$templateId"
-    return "模板: $name"
+private fun overrideSummary(profile: OutputProfileEntity, overrides: List<TemplateEntity>): String {
+    val globalCount = overrides.count { it.enabled && it.global }
+    val selectedNames = parseIdList(profile.overrideIds)
+        .mapNotNull { id -> overrides.firstOrNull { it.id == id }?.name }
+
+    val parts = mutableListOf<String>()
+    if (globalCount > 0) {
+        parts += "全局覆写 $globalCount 个"
+    }
+    parts += if (selectedNames.isEmpty()) {
+        "专属覆写: 无"
+    } else {
+        "专属覆写: ${selectedNames.joinToString("、")}"
+    }
+    return parts.joinToString(" · ")
+}
+
+private fun overrideStateText(template: TemplateEntity): String =
+    listOfNotNull(
+        if (template.enabled) "启用" else "停用",
+        if (template.global) "全局" else null,
+    ).joinToString(" · ")
+
+private fun parseIdList(rawIds: String): List<Long> =
+    rawIds.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
+
+private fun moveId(ids: List<Long>, id: Long, offset: Int): List<Long> {
+    val currentIndex = ids.indexOf(id)
+    if (currentIndex < 0) return ids
+    val targetIndex = (currentIndex + offset).coerceIn(0, ids.lastIndex)
+    if (currentIndex == targetIndex) return ids
+    return ids.toMutableList().apply {
+        removeAt(currentIndex)
+        add(targetIndex, id)
+    }
 }
 
 private fun subscriptionUrl(settings: ServerSettings, profileId: Long, lanAddress: String?): String {

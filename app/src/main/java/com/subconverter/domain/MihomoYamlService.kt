@@ -40,6 +40,7 @@ class MihomoYamlService {
     fun renderTemplate(
         templateYaml: String,
         proxies: List<LinkedHashMap<String, Any?>>,
+        overrideYamls: List<String> = emptyList(),
     ): String {
         val root = loadMap(templateYaml).ifEmpty { LinkedHashMap() }
         val uniqueProxies = makeNamesUnique(proxies)
@@ -53,12 +54,36 @@ class MihomoYamlService {
             LinkedHashMap()
         }
         renderedRoot["proxies"] = uniqueProxies
+        overrideYamls.forEach { overrideYaml ->
+            val patch = parseOverrideMap(overrideYaml)
+            val expandedPatch = replacePlaceholders(patch, proxyNames)
+            if (expandedPatch is Map<*, *>) {
+                deepMerge(renderedRoot, copyMap(expandedPatch))
+            }
+        }
         return yaml.dump(renderedRoot)
+    }
+
+    fun validateOverrideYaml(yamlBody: String): String? {
+        if (yamlBody.isBlank()) return null
+        return runCatching {
+            parseOverrideMap(yamlBody)
+            null
+        }.getOrElse { throwable ->
+            throwable.message ?: "覆写 YAML 解析失败"
+        }
     }
 
     private fun loadMap(yamlBody: String): LinkedHashMap<String, Any?> {
         val loaded = runCatching { yaml.load<Any?>(yamlBody) }.getOrNull()
         return (loaded as? Map<*, *>)?.let(::copyMap) ?: LinkedHashMap()
+    }
+
+    private fun parseOverrideMap(yamlBody: String): LinkedHashMap<String, Any?> {
+        if (yamlBody.isBlank()) return LinkedHashMap()
+        val loaded = yaml.load<Any?>(yamlBody) ?: return LinkedHashMap()
+        return (loaded as? Map<*, *>)?.let(::copyMap)
+            ?: throw IllegalArgumentException("覆写 YAML 必须是对象")
     }
 
     private fun matches(name: String, rules: TransformRules): Boolean {
@@ -102,20 +127,68 @@ class MihomoYamlService {
             else -> value
         }
 
+    private fun deepMerge(target: MutableMap<String, Any?>, patch: Map<String, Any?>) {
+        patch.forEach { (rawKey, patchValue) ->
+            if (rawKey.endsWith("!")) {
+                target[trimWrap(rawKey.dropLast(1))] = copyValue(patchValue)
+                return@forEach
+            }
+
+            when (patchValue) {
+                is Map<*, *> -> {
+                    val key = trimWrap(rawKey)
+                    val current = target[key]
+                    val targetChild = if (current is MutableMap<*, *>) {
+                        @Suppress("UNCHECKED_CAST")
+                        current as MutableMap<String, Any?>
+                    } else {
+                        LinkedHashMap<String, Any?>().also { target[key] = it }
+                    }
+                    deepMerge(targetChild, copyMap(patchValue))
+                }
+
+                is List<*> -> {
+                    val patchList = patchValue.map(::copyValue)
+                    when {
+                        rawKey.startsWith("+") -> {
+                            val key = trimWrap(rawKey.drop(1))
+                            val current = target[key] as? List<*> ?: emptyList<Any?>()
+                            target[key] = patchList + current.map(::copyValue)
+                        }
+
+                        rawKey.endsWith("+") -> {
+                            val key = trimWrap(rawKey.dropLast(1))
+                            val current = target[key] as? List<*> ?: emptyList<Any?>()
+                            target[key] = current.map(::copyValue) + patchList
+                        }
+
+                        else -> {
+                            target[trimWrap(rawKey)] = patchList
+                        }
+                    }
+                }
+
+                else -> {
+                    target[trimWrap(rawKey)] = copyValue(patchValue)
+                }
+            }
+        }
+    }
+
+    private fun trimWrap(key: String): String =
+        if (key.startsWith("<") && key.endsWith(">")) key.substring(1, key.lastIndex) else key
+
+    private fun copyValue(value: Any?): Any? =
+        when (value) {
+            is Map<*, *> -> copyMap(value)
+            is List<*> -> value.map(::copyValue)
+            else -> value
+        }
+
     private fun copyMap(map: Map<*, *>): LinkedHashMap<String, Any?> =
         LinkedHashMap<String, Any?>().apply {
             map.forEach { (key, value) ->
-                this[key.toString()] = when (value) {
-                    is Map<*, *> -> copyMap(value)
-                    is List<*> -> value.map { child ->
-                        when (child) {
-                            is Map<*, *> -> copyMap(child)
-                            else -> child
-                        }
-                    }
-
-                    else -> value
-                }
+                this[key.toString()] = copyValue(value)
             }
         }
 }

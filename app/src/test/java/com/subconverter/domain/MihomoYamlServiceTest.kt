@@ -1,8 +1,10 @@
 package com.subconverter.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.yaml.snakeyaml.Yaml
 import java.util.Base64
 
 class MihomoYamlServiceTest {
@@ -57,6 +59,49 @@ class MihomoYamlServiceTest {
 
         assertTrue(rendered.contains("name: Node"))
         assertTrue(rendered.contains("name: Node (2)"))
+    }
+
+    @Test
+    fun appliesYamlOverridesInOrder() {
+        val input = """
+            proxies:
+              - name: HK 01
+                type: ss
+        """.trimIndent()
+
+        val rendered = service.renderTemplate(
+            DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
+            service.extractProxies(input),
+            listOf(
+                """
+                +rules:
+                  - DOMAIN,front.example,DIRECT
+                rules+:
+                  - DOMAIN,tail.example,REJECT
+                proxy-groups!:
+                  - name: CUSTOM
+                    type: select
+                    proxies: "{{proxy_names}}"
+                dns:
+                  enable: true
+                """.trimIndent(),
+            ),
+        )
+        val root = Yaml().load<Map<String, Any?>>(rendered)
+        val rules = root["rules"] as List<*>
+        val groups = root["proxy-groups"] as List<*>
+        val firstGroup = groups.first() as Map<*, *>
+
+        assertEquals("DOMAIN,front.example,DIRECT", rules.first())
+        assertEquals("DOMAIN,tail.example,REJECT", rules.last())
+        assertEquals("CUSTOM", firstGroup["name"])
+        assertEquals(listOf("HK 01"), firstGroup["proxies"])
+        assertEquals(mapOf("enable" to true), root["dns"])
+    }
+
+    @Test
+    fun rejectsNonObjectOverrideYaml() {
+        assertNotNull(service.validateOverrideYaml("- item"))
     }
 
     @Test

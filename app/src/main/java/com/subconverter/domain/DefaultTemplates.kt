@@ -1,7 +1,5 @@
 package com.subconverter.domain
 
-const val DEFAULT_TEMPLATE_NAME = "Mihomo Basic"
-
 const val DEFAULT_MIHOMO_TEMPLATE = """
 mixed-port: 7890
 allow-lan: false
@@ -13,4 +11,8 @@ proxy-groups:
     proxies: "{{proxy_names}}"
 rules:
   - MATCH,PROXY
+"""
+
+const val DEFAULT_OVERRIDE_YAML = """
+rules+: []
 """

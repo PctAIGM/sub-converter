@@ -8,7 +8,7 @@ import com.subconverter.data.OutputProfileEntity
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
 import com.subconverter.data.settings.ServerSettings
-import com.subconverter.domain.DEFAULT_MIHOMO_TEMPLATE
+import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -70,9 +70,6 @@ class MainViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
     init {
-        viewModelScope.launch {
-            container.outputRepository.ensureDefaultTemplate()
-        }
         viewModelScope.launch {
             container.settingsStore.settings.collect { settings ->
                 if (settings.enabled && !container.localHttpServer.running.value) {
@@ -153,16 +150,29 @@ class MainViewModel(
         )
     }
 
-    fun saveTemplate(existing: TemplateEntity?, name: String, remoteUrl: String, yamlBody: String) {
+    fun saveTemplate(
+        existing: TemplateEntity?,
+        name: String,
+        remoteUrl: String,
+        yamlBody: String,
+        enabled: Boolean,
+        global: Boolean,
+    ) {
         viewModelScope.launch {
             if (name.isBlank()) {
-                messages.value = "模板名称不能为空"
+                messages.value = "覆写名称不能为空"
+                return@launch
+            }
+            container.yamlService.validateOverrideYaml(yamlBody)?.let { error ->
+                messages.value = error
                 return@launch
             }
             val template = (existing ?: TemplateEntity(name = "", yamlBody = "")).copy(
                 name = name.trim(),
                 remoteUrl = remoteUrl.trim(),
-                yamlBody = yamlBody.ifBlank { DEFAULT_MIHOMO_TEMPLATE.trimIndent() },
+                yamlBody = yamlBody,
+                enabled = enabled,
+                global = global,
                 updatedAt = System.currentTimeMillis(),
             )
 
@@ -177,7 +187,7 @@ class MainViewModel(
                 val outcome = container.outputRepository.refreshTemplate(templateId)
                 messages.value = outcome.message
             } else {
-                messages.value = "模板已保存"
+                messages.value = "覆写已保存"
             }
         }
     }
@@ -185,7 +195,7 @@ class MainViewModel(
     fun deleteTemplate(template: TemplateEntity) {
         viewModelScope.launch {
             container.outputRepository.deleteTemplate(template)
-            messages.value = "模板已删除"
+            messages.value = "覆写已删除"
         }
     }
 
@@ -197,31 +207,34 @@ class MainViewModel(
     }
 
     fun addTemplate(name: String, yamlBody: String) {
-        saveTemplate(existing = null, name = name, remoteUrl = "", yamlBody = yamlBody)
+        saveTemplate(existing = null, name = name, remoteUrl = "", yamlBody = yamlBody.ifBlank { DEFAULT_OVERRIDE_YAML.trimIndent() }, enabled = true, global = false)
+    }
+
+    fun moveTemplate(templateId: Long, offset: Int) {
+        viewModelScope.launch {
+            container.outputRepository.moveTemplate(templateId, offset)
+        }
     }
 
     fun saveProfile(
         existing: OutputProfileEntity?,
         name: String,
         sourceIds: List<Long>,
-        templateId: Long,
-        prefix: String,
-        includeRegex: String,
-        excludeRegex: String,
+        overrideIds: List<Long>,
         updateIntervalHours: Int,
     ) {
         viewModelScope.launch {
-            if (name.isBlank() || templateId <= 0 || sourceIds.isEmpty()) {
-                messages.value = "输出名称、订阅源和模板不能为空"
+            if (name.isBlank() || sourceIds.isEmpty()) {
+                messages.value = "输出名称和订阅源不能为空"
                 return@launch
             }
-            val profile = (existing ?: OutputProfileEntity(name = "", sourceIds = "", templateId = templateId)).copy(
+            val profile = (existing ?: OutputProfileEntity(name = "", sourceIds = "", templateId = 0)).copy(
                 name = name.trim(),
                 sourceIds = sourceIds.distinct().joinToString(","),
-                templateId = templateId,
-                prefix = prefix.trim(),
-                includeRegex = includeRegex.trim(),
-                excludeRegex = excludeRegex.trim(),
+                prefix = "",
+                includeRegex = "",
+                excludeRegex = "",
+                overrideIds = overrideIds.distinct().joinToString(","),
                 updateIntervalHours = updateIntervalHours.coerceAtLeast(1),
             )
 
@@ -244,20 +257,14 @@ class MainViewModel(
     fun addProfile(
         name: String,
         sourceIds: String,
-        templateId: Long,
-        prefix: String,
-        includeRegex: String,
-        excludeRegex: String,
+        overrideIds: String,
         updateIntervalHours: Int,
     ) {
         saveProfile(
             existing = null,
             name = name,
             sourceIds = sourceIds.split(',').mapNotNull { it.trim().toLongOrNull() },
-            templateId = templateId,
-            prefix = prefix,
-            includeRegex = includeRegex,
-            excludeRegex = excludeRegex,
+            overrideIds = overrideIds.split(',').mapNotNull { it.trim().toLongOrNull() },
             updateIntervalHours = updateIntervalHours,
         )
     }

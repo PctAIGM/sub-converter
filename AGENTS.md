@@ -9,7 +9,7 @@ Project conventions for AI agents working on this codebase.
 ./gradlew assembleRelease        # Release APK (no minification)
 ```
 
-After modify , using `./gradlew assembleDebug` to build the `Debug` APK.
+!!! After modify , using `./gradlew assembleDebug` to build the `Debug` APK.
 
 ## Architecture
 
