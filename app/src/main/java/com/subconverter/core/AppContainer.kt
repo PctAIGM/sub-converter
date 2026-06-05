@@ -13,7 +13,7 @@ import com.subconverter.domain.SubscriptionRepository
 import com.subconverter.server.LocalHttpServer
 
 class AppContainer private constructor(context: Context) {
-    private val appContext = context.applicationContext
+    val appContext: Context = context.applicationContext
 
     val database: AppDatabase = Room.databaseBuilder(
         appContext,

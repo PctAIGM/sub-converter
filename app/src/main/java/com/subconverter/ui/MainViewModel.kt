@@ -9,6 +9,7 @@ import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
 import com.subconverter.data.settings.ServerSettings
 import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
+import com.subconverter.server.LocalHttpServerService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -71,11 +72,10 @@ class MainViewModel(
 
     init {
         viewModelScope.launch {
-            container.settingsStore.settings.collect { settings ->
-                if (settings.enabled && !container.localHttpServer.running.value) {
-                    runCatching { container.localHttpServer.start(settings) }
-                        .onFailure { messages.value = it.message ?: "HTTP 服务启动失败" }
-                }
+            val settings = container.settingsStore.current()
+            if (settings.enabled && !container.localHttpServer.running.value) {
+                runCatching { LocalHttpServerService.start(container.appContext) }
+                    .onFailure { messages.value = it.message ?: "HTTP 服务启动失败" }
             }
         }
     }
@@ -285,12 +285,15 @@ class MainViewModel(
             if (settings.enabled) {
                 runCatching {
                     container.localHttpServer.start(settings)
+                    LocalHttpServerService.start(container.appContext)
                     messages.value = "HTTP 服务已启动"
                 }.onFailure {
                     container.settingsStore.update(settings.copy(enabled = false))
+                    container.localHttpServer.stop()
                     messages.value = it.message ?: "HTTP 服务启动失败"
                 }
             } else {
+                LocalHttpServerService.stop(container.appContext)
                 container.localHttpServer.stop()
                 messages.value = "HTTP 服务已停止"
             }

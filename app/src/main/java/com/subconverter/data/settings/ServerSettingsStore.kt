@@ -15,6 +15,7 @@ private val Context.serverSettingsDataStore by preferencesDataStore("server_sett
 
 data class ServerSettings(
     val enabled: Boolean = false,
+    val autoStartOnBoot: Boolean = false,
     val allowLan: Boolean = false,
     val port: Int = 9876,
     val token: String = "",
@@ -25,6 +26,7 @@ class ServerSettingsStore(private val context: Context) {
     val settings: Flow<ServerSettings> = context.serverSettingsDataStore.data.map { preferences ->
         ServerSettings(
             enabled = preferences[Keys.Enabled] ?: false,
+            autoStartOnBoot = preferences[Keys.AutoStartOnBoot] ?: false,
             allowLan = preferences[Keys.AllowLan] ?: false,
             port = preferences[Keys.Port] ?: 9876,
             token = preferences[Keys.Token].orEmpty(),
@@ -37,6 +39,7 @@ class ServerSettingsStore(private val context: Context) {
     suspend fun update(settings: ServerSettings) {
         context.serverSettingsDataStore.edit { preferences ->
             preferences[Keys.Enabled] = settings.enabled
+            preferences[Keys.AutoStartOnBoot] = settings.autoStartOnBoot
             preferences[Keys.AllowLan] = settings.allowLan
             preferences[Keys.Port] = settings.port.coerceIn(1024, 65535)
             preferences[Keys.Token] = settings.token.trim()
@@ -50,6 +53,7 @@ class ServerSettingsStore(private val context: Context) {
 
     private object Keys {
         val Enabled = booleanPreferencesKey("enabled")
+        val AutoStartOnBoot = booleanPreferencesKey("auto_start_on_boot")
         val AllowLan = booleanPreferencesKey("allow_lan")
         val Port = intPreferencesKey("port")
         val Token = stringPreferencesKey("token")

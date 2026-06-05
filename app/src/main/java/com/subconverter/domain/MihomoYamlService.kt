@@ -58,7 +58,7 @@ class MihomoYamlService {
             val patch = parseOverrideMap(overrideYaml)
             val expandedPatch = replacePlaceholders(patch, proxyNames)
             if (expandedPatch is Map<*, *>) {
-                deepMerge(renderedRoot, copyMap(expandedPatch))
+                deepMerge(renderedRoot, expandedPatch)
             }
         }
         return yaml.dump(renderedRoot)
@@ -127,8 +127,9 @@ class MihomoYamlService {
             else -> value
         }
 
-    private fun deepMerge(target: MutableMap<String, Any?>, patch: Map<String, Any?>) {
-        patch.forEach { (rawKey, patchValue) ->
+    private fun deepMerge(target: MutableMap<String, Any?>, patch: Map<*, *>) {
+        patch.forEach { (rawKeyValue, patchValue) ->
+            val rawKey = rawKeyValue.toString()
             if (rawKey.endsWith("!")) {
                 target[trimWrap(rawKey.dropLast(1))] = copyValue(patchValue)
                 return@forEach
@@ -144,7 +145,7 @@ class MihomoYamlService {
                     } else {
                         LinkedHashMap<String, Any?>().also { target[key] = it }
                     }
-                    deepMerge(targetChild, copyMap(patchValue))
+                    deepMerge(targetChild, patchValue)
                 }
 
                 is List<*> -> {

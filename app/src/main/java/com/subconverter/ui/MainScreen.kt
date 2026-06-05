@@ -1473,7 +1473,7 @@ private fun SourceCard(
                     )
                     source.lastRefreshAt?.let {
                         Text(
-                            "刷新于 ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))}",
+                            "上次成功 ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1792,6 +1792,7 @@ private fun ServerScreen(
     var port by rememberSaveable(settings.port) { mutableStateOf(settings.port.toString()) }
     var token by rememberSaveable(settings.token) { mutableStateOf(settings.token) }
     var allowLan by rememberSaveable(settings.allowLan) { mutableStateOf(settings.allowLan) }
+    var autoStartOnBoot by rememberSaveable(settings.autoStartOnBoot) { mutableStateOf(settings.autoStartOnBoot) }
     var globalUserAgent by rememberSaveable(settings.globalUserAgent) { mutableStateOf(settings.globalUserAgent) }
     val lanAddress = remember(allowLan) { if (allowLan) localLanAddress() else null }
     val allowLanDescription = if (allowLan) {
@@ -1803,6 +1804,7 @@ private fun ServerScreen(
         port = port.toIntOrNull() ?: settings.port,
         token = token,
         allowLan = allowLan,
+        autoStartOnBoot = autoStartOnBoot,
         globalUserAgent = globalUserAgent,
     )
 
@@ -1820,6 +1822,7 @@ private fun ServerScreen(
                     onSave(
                         ServerSettings(
                             enabled = !running,
+                            autoStartOnBoot = autoStartOnBoot,
                             allowLan = allowLan,
                             port = port.toIntOrNull() ?: 9876,
                             token = token,
@@ -1845,6 +1848,13 @@ private fun ServerScreen(
                     allowLanDescription,
                     allowLan,
                     { allowLan = it },
+                )
+                FieldDivider()
+                iOSFormSwitch(
+                    "开机自启动",
+                    "设备重启后自动启动本地 HTTP 服务",
+                    autoStartOnBoot,
+                    { autoStartOnBoot = it },
                 )
             }
         }
@@ -2365,8 +2375,8 @@ private fun trafficText(source: SubscriptionSourceEntity): String {
 
 private fun overrideCardSubtitle(template: TemplateEntity): String {
     val refreshTime = template.lastRefreshAt?.let {
-        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))
-    } ?: "未刷新"
+        "上次成功 ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))}"
+    } ?: "未成功刷新"
     return listOf(
         overrideStateText(template),
         if (template.remoteUrl.isBlank()) "本地覆写" else "远程覆写 · $refreshTime",

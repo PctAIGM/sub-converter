@@ -76,7 +76,6 @@ class SubscriptionRepository(
         }.getOrElse { throwable ->
             dao.update(
                 source.copy(
-                    lastRefreshAt = System.currentTimeMillis(),
                     lastError = throwable.message ?: throwable::class.java.simpleName,
                 ),
             )

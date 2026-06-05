@@ -75,7 +75,6 @@ class OutputRepository(
         }.getOrElse { throwable ->
             templateDao.update(
                 template.copy(
-                    lastRefreshAt = System.currentTimeMillis(),
                     lastError = throwable.message ?: throwable::class.java.simpleName,
                     updatedAt = System.currentTimeMillis(),
                 ),
