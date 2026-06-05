@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -125,7 +126,7 @@ private enum class MainTab(
     Server("服务", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
-private enum class EditScreen { None, Source, Template, Output, Nodes, OutputNodes, Scan, QrShare }
+private enum class EditScreen { None, Source, Template, Output, Nodes, OutputNodes, OverrideHelp, Scan, QrShare }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,6 +189,11 @@ fun MainScreen(viewModel: MainViewModel) {
                             }
                         }
                         MainTab.Templates -> {
+                            IconButton(onClick = {
+                                editScreen = EditScreen.OverrideHelp
+                            }) {
+                                Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "覆写说明")
+                            }
                             IconButton(onClick = {
                                 editingTemplate = null
                                 editScreen = EditScreen.Template
@@ -317,6 +323,10 @@ fun MainScreen(viewModel: MainViewModel) {
                 onDismiss = { editScreen = EditScreen.None },
             )
         }
+
+        EditScreen.OverrideHelp -> OverrideHelpScreen(
+            onDismiss = { editScreen = EditScreen.None },
+        )
 
         EditScreen.Scan -> QrScanScreen(
             onScanned = { url ->
@@ -528,6 +538,114 @@ private fun TemplateEditScreen(
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OverrideHelpScreen(
+    onDismiss: () -> Unit,
+) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text("覆写说明", style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item {
+                iOSGroupedCard {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "执行顺序",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "基础配置生成后，先应用全局覆写，再按输出配置里的顺序应用专属覆写。同一个覆写只会执行一次。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            item {
+                SectionHeader("追加规则到末尾")
+                OverrideHelpCodeBlock(
+                    """
+                    rules+:
+                      - DOMAIN-SUFFIX,example.com,DIRECT
+                    """.trimIndent(),
+                )
+            }
+
+            item {
+                SectionHeader("插入规则到开头")
+                OverrideHelpCodeBlock(
+                    """
+                    +rules:
+                      - DOMAIN,api.example.com,PROXY
+                    """.trimIndent(),
+                )
+            }
+
+            item {
+                SectionHeader("整体替换字段")
+                OverrideHelpCodeBlock(
+                    """
+                    proxy-groups!:
+                      - name: PROXY
+                        type: select
+                        proxies: "{{proxy_names}}"
+                    """.trimIndent(),
+                )
+            }
+
+            item {
+                SectionHeader("深合并对象")
+                OverrideHelpCodeBlock(
+                    """
+                    dns:
+                      enable: true
+                      enhanced-mode: fake-ip
+                    """.trimIndent(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverrideHelpCodeBlock(text: String) {
+    iOSGroupedCard {
+        Text(
+            text,
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
