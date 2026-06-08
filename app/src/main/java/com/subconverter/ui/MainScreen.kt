@@ -54,6 +54,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -106,6 +108,10 @@ import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
 import com.subconverter.data.settings.ServerSettings
 import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
+import com.subconverter.domain.DnsConnectionMode
+import com.subconverter.domain.DnsProtocol
+import com.subconverter.domain.PublicDnsPresets
+import com.subconverter.domain.SubscriptionDnsConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -283,8 +289,19 @@ fun MainScreen(viewModel: MainViewModel) {
             initialUrl = scannedUrl,
             allSources = state.sources,
             onDismiss = { editScreen = EditScreen.None },
-            onConfirm = { source, name, url, userAgent, prefix, include, exclude, auto, interval ->
-                viewModel.saveSource(source, name, url, userAgent, prefix, include, exclude, auto, interval)
+            onConfirm = { source, name, url, userAgent, prefix, include, exclude, auto, interval, dnsConfig ->
+                viewModel.saveSource(
+                    source,
+                    name,
+                    url,
+                    userAgent,
+                    prefix,
+                    include,
+                    exclude,
+                    auto,
+                    interval,
+                    dnsConfig,
+                )
                 editScreen = EditScreen.None
             },
         )
@@ -388,7 +405,18 @@ private fun SourceEditScreen(
     initialUrl: String,
     allSources: List<SubscriptionSourceEntity>,
     onDismiss: () -> Unit,
-    onConfirm: (SubscriptionSourceEntity?, String, String, String, String, String, String, Boolean, Long) -> Unit,
+    onConfirm: (
+        SubscriptionSourceEntity?,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Boolean,
+        Long,
+        SubscriptionDnsConfig,
+    ) -> Unit,
 ) {
     var name by rememberSaveable(source?.id) { mutableStateOf(source?.name.orEmpty()) }
     var url by rememberSaveable(source?.id) { mutableStateOf(source?.url.orEmpty().ifBlank { initialUrl }) }
@@ -398,18 +426,62 @@ private fun SourceEditScreen(
     var exclude by rememberSaveable(source?.id) { mutableStateOf(source?.excludeRegex.orEmpty()) }
     var auto by rememberSaveable(source?.id) { mutableStateOf(source?.autoRefreshEnabled ?: false) }
     var interval by rememberSaveable(source?.id) { mutableStateOf((source?.refreshIntervalMinutes ?: 720).toString()) }
+    var dnsProtocol by rememberSaveable(source?.id) { mutableStateOf(source?.dnsProtocol.orEmpty()) }
+    var dnsServer by rememberSaveable(source?.id) { mutableStateOf(source?.dnsServer.orEmpty()) }
+    var dnsConnectionMode by rememberSaveable(source?.id) {
+        mutableStateOf(source?.dnsConnectionMode ?: DnsConnectionMode.PRESERVE_DOMAIN.name)
+    }
+    var allowHostnameMismatch by rememberSaveable(source?.id) {
+        mutableStateOf(source?.allowHostnameMismatch ?: false)
+    }
 
     val nodeNames = remember(source?.cachedYaml) {
         extractNodeNames(source?.cachedYaml.orEmpty())
     }
+    val parsedDnsProtocol = DnsProtocol.fromStorage(dnsProtocol)
+    val parsedConnectionMode = DnsConnectionMode.fromStorage(dnsConnectionMode)
+    val dnsConfig = SubscriptionDnsConfig(
+        protocol = parsedDnsProtocol,
+        server = dnsServer,
+        connectionMode = parsedConnectionMode,
+        allowHostnameMismatch = allowHostnameMismatch,
+    )
+    val selectedPreset = PublicDnsPresets.all.firstOrNull {
+        it.protocol == parsedDnsProtocol && it.server.equals(dnsServer.trim(), ignoreCase = true)
+    }
+    val selectedDnsOption = when {
+        parsedDnsProtocol == null -> "system"
+        selectedPreset != null -> selectedPreset.id
+        parsedDnsProtocol == DnsProtocol.DOH -> "custom_doh"
+        else -> "custom_dot"
+    }
+    val dnsOptions = listOf("system" to "系统 DNS") +
+        PublicDnsPresets.all.map { it.id to it.label } +
+        listOf(
+            "custom_doh" to "自定义 · DoH",
+            "custom_dot" to "自定义 · DoT",
+        )
+    val dnsError = dnsConfig.validate()
+    val isCustomDns = parsedDnsProtocol != null && selectedPreset == null
 
     EditScreenScaffold(
         title = if (source == null) "添加订阅" else "编辑订阅",
         onDismiss = onDismiss,
         onSave = {
-            onConfirm(source, name, url, userAgent, prefix, include, exclude, auto, interval.toLongOrNull() ?: 720)
+            onConfirm(
+                source,
+                name,
+                url,
+                userAgent,
+                prefix,
+                include,
+                exclude,
+                auto,
+                interval.toLongOrNull() ?: 720,
+                dnsConfig,
+            )
         },
-        saveEnabled = url.isNotBlank(),
+        saveEnabled = url.isNotBlank() && dnsError == null,
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -426,6 +498,97 @@ private fun SourceEditScreen(
                     SmallFormField("订阅 URL", url, { url = it }, "https://...")
                     FieldDivider()
                     SmallFormField("User-Agent", userAgent, { userAgent = it }, "留空使用全局 UA")
+                }
+            }
+
+            item {
+                SectionHeader("DNS 解析")
+                iOSGroupedCard {
+                    ChoiceFormField(
+                        label = "解析服务",
+                        selectedId = selectedDnsOption,
+                        options = dnsOptions,
+                        onSelected = { option ->
+                            when (option) {
+                                "system" -> {
+                                    dnsProtocol = ""
+                                    dnsServer = ""
+                                    dnsConnectionMode = DnsConnectionMode.PRESERVE_DOMAIN.name
+                                    allowHostnameMismatch = false
+                                }
+                                "custom_doh" -> {
+                                    if (selectedDnsOption != option) dnsServer = ""
+                                    dnsProtocol = DnsProtocol.DOH.name
+                                }
+                                "custom_dot" -> {
+                                    if (selectedDnsOption != option) dnsServer = ""
+                                    dnsProtocol = DnsProtocol.DOT.name
+                                }
+                                else -> PublicDnsPresets.all.firstOrNull { it.id == option }?.let {
+                                    dnsProtocol = it.protocol.name
+                                    dnsServer = it.server
+                                }
+                            }
+                        },
+                    )
+                    if (parsedDnsProtocol != null) {
+                        if (isCustomDns) {
+                            FieldDivider()
+                            SmallFormField(
+                                label = if (parsedDnsProtocol == DnsProtocol.DOH) "DoH 地址" else "DoT 服务器",
+                                value = dnsServer,
+                                onValueChange = { dnsServer = it },
+                                placeholder = if (parsedDnsProtocol == DnsProtocol.DOH) {
+                                    "https://dns.example/dns-query"
+                                } else {
+                                    "dns.example:853"
+                                },
+                            )
+                        }
+                        FieldDivider()
+                        ChoiceFormField(
+                            label = "连接方式",
+                            selectedId = parsedConnectionMode.name,
+                            options = listOf(
+                                DnsConnectionMode.PRESERVE_DOMAIN.name to "保留域名（推荐）",
+                                DnsConnectionMode.IP_URL.name to "直接使用 IP URL",
+                            ),
+                            onSelected = {
+                                dnsConnectionMode = it
+                                if (it != DnsConnectionMode.IP_URL.name) {
+                                    allowHostnameMismatch = false
+                                }
+                            },
+                        )
+                        if (parsedConnectionMode == DnsConnectionMode.IP_URL) {
+                            FieldDivider()
+                            iOSFormSwitch(
+                                label = "忽略证书主机名不匹配",
+                                subtitle = "仍校验证书链、颁发机构和有效期",
+                                checked = allowHostnameMismatch,
+                                onCheckedChange = { allowHostnameMismatch = it },
+                            )
+                        }
+                    }
+                }
+                Text(
+                    when {
+                        parsedDnsProtocol == null -> "不覆盖解析，订阅更新使用系统 DNS。"
+                        parsedConnectionMode == DnsConnectionMode.PRESERVE_DOMAIN ->
+                            "连接指定 DNS 返回的 IP，同时保留原域名、Host 与 SNI。"
+                        else -> "URL 主机将改写为解析 IP，部分 HTTPS 或 CDN 订阅可能无法访问。"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                )
+                dnsError?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
                 }
             }
 
@@ -1164,6 +1327,67 @@ private fun SmallFormField(
 }
 
 @Composable
+private fun ChoiceFormField(
+    label: String,
+    selectedId: String,
+    options: List<Pair<String, String>>,
+    onSelected: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selectedId }?.second.orEmpty()
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    selectedLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Icon(
+                Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (id, text) ->
+                DropdownMenuItem(
+                    text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+                    onClick = {
+                        expanded = false
+                        onSelected(id)
+                    },
+                    trailingIcon = {
+                        if (id == selectedId) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun FieldDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(start = 14.dp),
@@ -1505,6 +1729,16 @@ private fun SourceCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
+                    } else {
+                        sourceDnsLabel(source)?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
                 if (refreshing) {
@@ -2489,6 +2723,19 @@ private fun trafficText(source: SubscriptionSourceEntity): String {
         formatBytes((totalBytes - usedBytes).coerceAtLeast(0))
     } ?: "未知"
     return "已用 $used / 剩余 $remaining / 总量 $total"
+}
+
+private fun sourceDnsLabel(source: SubscriptionSourceEntity): String? {
+    val protocol = DnsProtocol.fromStorage(source.dnsProtocol) ?: return null
+    val preset = PublicDnsPresets.all.firstOrNull {
+        it.protocol == protocol && it.server.equals(source.dnsServer.trim(), ignoreCase = true)
+    }
+    val resolver = preset?.label ?: "自定义 ${protocol.name}"
+    val mode = when (DnsConnectionMode.fromStorage(source.dnsConnectionMode)) {
+        DnsConnectionMode.PRESERVE_DOMAIN -> "保留域名"
+        DnsConnectionMode.IP_URL -> "IP URL"
+    }
+    return "$resolver · $mode"
 }
 
 private fun overrideCardSubtitle(template: TemplateEntity): String {

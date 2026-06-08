@@ -24,6 +24,10 @@ data class SubscriptionSourceEntity(
     val downloadBytes: Long? = null,
     val totalBytes: Long? = null,
     val expireAtSeconds: Long? = null,
+    val dnsProtocol: String = "",
+    val dnsServer: String = "",
+    val dnsConnectionMode: String = "PRESERVE_DOMAIN",
+    val allowHostnameMismatch: Boolean = false,
 )
 
 @Entity(tableName = "templates")

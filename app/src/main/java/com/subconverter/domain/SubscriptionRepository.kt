@@ -46,7 +46,11 @@ class SubscriptionRepository(
                     globalValue != SubscriptionFetcher.MIHOMO_USER_AGENT -> globalValue
                 else -> sourceUserAgent
             }
-            val result = fetcher.fetch(source.url, effectiveUserAgent)
+            val result = fetcher.fetch(
+                url = source.url,
+                userAgent = effectiveUserAgent,
+                dnsConfig = SubscriptionDnsConfig.from(source),
+            )
             val resolvedName = source.name.takeIf { it.isNotBlank() }
                 ?: result.profileTitle
                 ?: "Sub-${System.currentTimeMillis().toString(36)}"

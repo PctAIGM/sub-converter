@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TemplateEntity::class,
         OutputProfileEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -55,6 +55,19 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE templates ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("UPDATE templates SET sortOrder = id")
                 db.execSQL("ALTER TABLE output_profiles ADD COLUMN overrideIds TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val Migration6To7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscription_sources ADD COLUMN dnsProtocol TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE subscription_sources ADD COLUMN dnsServer TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "ALTER TABLE subscription_sources ADD COLUMN dnsConnectionMode TEXT NOT NULL DEFAULT 'PRESERVE_DOMAIN'",
+                )
+                db.execSQL(
+                    "ALTER TABLE subscription_sources ADD COLUMN allowHostnameMismatch INTEGER NOT NULL DEFAULT 0",
+                )
             }
         }
     }

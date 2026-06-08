@@ -9,6 +9,8 @@ import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
 import com.subconverter.data.settings.ServerSettings
 import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
+import com.subconverter.domain.DnsConnectionMode
+import com.subconverter.domain.SubscriptionDnsConfig
 import com.subconverter.server.LocalHttpServerService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -90,10 +92,15 @@ class MainViewModel(
         excludeRegex: String,
         autoRefreshEnabled: Boolean,
         refreshIntervalMinutes: Long,
+        dnsConfig: SubscriptionDnsConfig,
     ) {
         viewModelScope.launch {
             if (url.isBlank()) {
                 messages.value = "订阅地址不能为空"
+                return@launch
+            }
+            dnsConfig.validate()?.let {
+                messages.value = it
                 return@launch
             }
             val resolvedName = name.trim().ifBlank {
@@ -108,6 +115,16 @@ class MainViewModel(
                 excludeRegex = excludeRegex.trim(),
                 autoRefreshEnabled = autoRefreshEnabled,
                 refreshIntervalMinutes = refreshIntervalMinutes.coerceAtLeast(15),
+                dnsProtocol = dnsConfig.protocol?.name.orEmpty(),
+                dnsServer = if (dnsConfig.usesSystemDns) "" else dnsConfig.server.trim(),
+                dnsConnectionMode = if (dnsConfig.usesSystemDns) {
+                    DnsConnectionMode.PRESERVE_DOMAIN.name
+                } else {
+                    dnsConfig.connectionMode.name
+                },
+                allowHostnameMismatch = !dnsConfig.usesSystemDns &&
+                    dnsConfig.connectionMode == DnsConnectionMode.IP_URL &&
+                    dnsConfig.allowHostnameMismatch,
             )
 
             if (existing == null) {
@@ -136,6 +153,7 @@ class MainViewModel(
         excludeRegex: String,
         autoRefreshEnabled: Boolean,
         refreshIntervalMinutes: Long,
+        dnsConfig: SubscriptionDnsConfig = SubscriptionDnsConfig(),
     ) {
         saveSource(
             existing = null,
@@ -147,6 +165,7 @@ class MainViewModel(
             excludeRegex = excludeRegex,
             autoRefreshEnabled = autoRefreshEnabled,
             refreshIntervalMinutes = refreshIntervalMinutes,
+            dnsConfig = dnsConfig,
         )
     }
 
