@@ -274,6 +274,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 settings = state.settings,
                 running = state.serverRunning,
                 onSave = viewModel::updateServerSettings,
+                onAutoStartOnBootChange = viewModel::updateAutoStartOnBoot,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -2139,6 +2140,7 @@ private fun ServerScreen(
     settings: ServerSettings,
     running: Boolean,
     onSave: (ServerSettings) -> Unit,
+    onAutoStartOnBootChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var port by rememberSaveable(settings.port) { mutableStateOf(settings.port.toString()) }
@@ -2206,7 +2208,10 @@ private fun ServerScreen(
                     "开机自启动",
                     "设备重启后自动启动本地 HTTP 服务",
                     autoStartOnBoot,
-                    { autoStartOnBoot = it },
+                    {
+                        autoStartOnBoot = it
+                        onAutoStartOnBootChange(it)
+                    },
                 )
             }
         }

@@ -319,6 +319,12 @@ class MainViewModel(
         }
     }
 
+    fun updateAutoStartOnBoot(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsStore.updateAutoStartOnBoot(enabled)
+        }
+    }
+
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

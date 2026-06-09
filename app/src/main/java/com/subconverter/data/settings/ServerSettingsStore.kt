@@ -49,6 +49,12 @@ class ServerSettingsStore(private val context: Context) {
         }
     }
 
+    suspend fun updateAutoStartOnBoot(enabled: Boolean) {
+        context.serverSettingsDataStore.edit { preferences ->
+            preferences[Keys.AutoStartOnBoot] = enabled
+        }
+    }
+
     suspend fun current(): ServerSettings = settings.first()
 
     private object Keys {
