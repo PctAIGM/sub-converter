@@ -23,6 +23,21 @@ class DnsMessageCodecTest {
     }
 
     @Test
+    fun parsesAnswerTtl() {
+        val response = response(
+            hostname = "example.com",
+            type = 1,
+            id = 0x1234,
+            address = byteArrayOf(1, 2, 3, 4),
+            ttlSeconds = 1_234,
+        )
+
+        val records = DnsMessageCodec.parseResponseRecords(response, 0x1234, 1)
+
+        assertEquals(1_234L, records.single().ttlSeconds)
+    }
+
+    @Test
     fun parsesIpv6Answer() {
         val address = InetAddress.getByName("2001:db8::1").address
         val response = response(
@@ -69,6 +84,7 @@ class DnsMessageCodecTest {
         type: Int,
         id: Int,
         address: ByteArray,
+        ttlSeconds: Int = 60,
     ): ByteArray {
         val query = DnsMessageCodec.createQuery(hostname, type, id)
         query[2] = 0x81.toByte()
@@ -80,7 +96,14 @@ class DnsMessageCodecTest {
             write(byteArrayOf(0xc0.toByte(), 0x0c))
             writeU16(type)
             writeU16(1)
-            write(byteArrayOf(0, 0, 0, 60))
+            write(
+                byteArrayOf(
+                    (ttlSeconds ushr 24).toByte(),
+                    (ttlSeconds ushr 16).toByte(),
+                    (ttlSeconds ushr 8).toByte(),
+                    ttlSeconds.toByte(),
+                ),
+            )
             writeU16(address.size)
             write(address)
         }.toByteArray()

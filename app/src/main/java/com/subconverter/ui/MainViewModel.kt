@@ -11,6 +11,7 @@ import com.subconverter.data.settings.ServerSettings
 import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
 import com.subconverter.domain.DnsConnectionMode
 import com.subconverter.domain.SubscriptionDnsConfig
+import com.subconverter.domain.nodeResolutionFingerprint
 import com.subconverter.server.LocalHttpServerService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -92,6 +93,7 @@ class MainViewModel(
         excludeRegex: String,
         autoRefreshEnabled: Boolean,
         refreshIntervalMinutes: Long,
+        preResolveNodes: Boolean,
         dnsConfig: SubscriptionDnsConfig,
     ) {
         viewModelScope.launch {
@@ -125,14 +127,31 @@ class MainViewModel(
                 allowHostnameMismatch = !dnsConfig.usesSystemDns &&
                     dnsConfig.connectionMode == DnsConnectionMode.IP_URL &&
                     dnsConfig.allowHostnameMismatch,
+                preResolveNodes = preResolveNodes,
             )
 
-            if (existing == null) {
-                val id = container.subscriptionRepository.add(source)
-                messages.value = "已添加订阅 #$id"
+            val shouldRefresh = preResolveNodes && (
+                existing == null ||
+                    !existing.preResolveNodes ||
+                    existing.url.trim() != source.url ||
+                    SubscriptionDnsConfig.from(existing).nodeResolutionFingerprint() !=
+                    dnsConfig.nodeResolutionFingerprint()
+                )
+            val sourceId = if (existing == null) {
+                container.subscriptionRepository.add(source)
             } else {
                 container.subscriptionRepository.update(source)
-                messages.value = "订阅已保存"
+                source.id
+            }
+
+            if (shouldRefresh) {
+                refreshingIds.update { it + sourceId }
+                val globalUserAgent = container.settingsStore.current().globalUserAgent
+                val outcome = container.subscriptionRepository.refreshSource(sourceId, globalUserAgent)
+                messages.value = outcome.message
+                refreshingIds.update { it - sourceId }
+            } else {
+                messages.value = if (existing == null) "已添加订阅 #$sourceId" else "订阅已保存"
             }
         }
     }
@@ -153,6 +172,7 @@ class MainViewModel(
         excludeRegex: String,
         autoRefreshEnabled: Boolean,
         refreshIntervalMinutes: Long,
+        preResolveNodes: Boolean = false,
         dnsConfig: SubscriptionDnsConfig = SubscriptionDnsConfig(),
     ) {
         saveSource(
@@ -165,6 +185,7 @@ class MainViewModel(
             excludeRegex = excludeRegex,
             autoRefreshEnabled = autoRefreshEnabled,
             refreshIntervalMinutes = refreshIntervalMinutes,
+            preResolveNodes = preResolveNodes,
             dnsConfig = dnsConfig,
         )
     }

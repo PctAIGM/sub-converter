@@ -1,5 +1,6 @@
 package com.subconverter.domain
 
+import com.subconverter.data.NodeDnsCacheDao
 import com.subconverter.data.OutputProfileDao
 import com.subconverter.data.OutputProfileEntity
 import com.subconverter.data.SubscriptionSourceDao
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 
 class OutputRepository(
     private val sourceDao: SubscriptionSourceDao,
+    private val nodeDnsCacheDao: NodeDnsCacheDao,
     private val templateDao: TemplateDao,
     private val outputDao: OutputProfileDao,
     private val yamlService: MihomoYamlService,
@@ -107,15 +109,28 @@ class OutputRepository(
             .filter { it.enabled && it.cachedYaml.isNotBlank() }
             .sortedBy { source -> sourceIds.indexOf(source.id).takeIf { it >= 0 } ?: Int.MAX_VALUE }
 
+        val now = System.currentTimeMillis()
+        val addressMaps = mutableMapOf<Long, Map<String, String>>()
+        for (source in sources.filter { it.preResolveNodes }) {
+            val fingerprint = SubscriptionDnsConfig.from(source).nodeResolutionFingerprint()
+            addressMaps[source.id] = nodeDnsCacheDao.getBySourceId(source.id)
+                .filter { it.expiresAt > now && it.configFingerprint == fingerprint }
+                .associate { it.hostname to it.ipAddress }
+        }
+
         val sourceProxies = sources.flatMap { source ->
             val proxies = yamlService.extractProxies(source.cachedYaml)
-            yamlService.transformProxies(
+            val transformed = yamlService.transformProxies(
                 proxies = proxies,
                 rules = TransformRules(
                     prefix = source.prefix,
                     includeRegex = source.includeRegex,
                     excludeRegex = source.excludeRegex,
                 ),
+            )
+            yamlService.replaceProxyServers(
+                proxies = transformed,
+                addressByHostname = addressMaps[source.id].orEmpty(),
             )
         }
 

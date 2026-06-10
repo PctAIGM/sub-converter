@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -27,6 +28,24 @@ interface SubscriptionSourceDao {
 
     @Delete
     suspend fun delete(source: SubscriptionSourceEntity)
+}
+
+@Dao
+interface NodeDnsCacheDao {
+    @Query("SELECT * FROM node_dns_cache WHERE sourceId = :sourceId")
+    suspend fun getBySourceId(sourceId: Long): List<NodeDnsCacheEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entries: List<NodeDnsCacheEntity>)
+
+    @Query("DELETE FROM node_dns_cache WHERE sourceId = :sourceId")
+    suspend fun deleteBySourceId(sourceId: Long)
+
+    @Transaction
+    suspend fun replaceForSource(sourceId: Long, entries: List<NodeDnsCacheEntity>) {
+        deleteBySourceId(sourceId)
+        if (entries.isNotEmpty()) insertAll(entries)
+    }
 }
 
 @Dao

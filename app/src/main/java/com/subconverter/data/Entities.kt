@@ -1,6 +1,8 @@
 package com.subconverter.data
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "subscription_sources")
@@ -28,6 +30,30 @@ data class SubscriptionSourceEntity(
     val dnsServer: String = "",
     val dnsConnectionMode: String = "PRESERVE_DOMAIN",
     val allowHostnameMismatch: Boolean = false,
+    val preResolveNodes: Boolean = false,
+    val nodeResolveSuccessCount: Int = 0,
+    val nodeResolveFailureCount: Int = 0,
+)
+
+@Entity(
+    tableName = "node_dns_cache",
+    primaryKeys = ["sourceId", "hostname"],
+    foreignKeys = [
+        ForeignKey(
+            entity = SubscriptionSourceEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["sourceId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("sourceId")],
+)
+data class NodeDnsCacheEntity(
+    val sourceId: Long,
+    val hostname: String,
+    val ipAddress: String,
+    val expiresAt: Long,
+    val configFingerprint: String,
 )
 
 @Entity(tableName = "templates")

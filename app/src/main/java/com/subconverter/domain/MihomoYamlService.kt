@@ -37,6 +37,25 @@ class MihomoYamlService {
             }
         }
 
+    fun extractProxyServerHostnames(yamlBody: String): Set<String> =
+        extractProxies(yamlBody)
+            .mapNotNull { proxy -> proxy["server"]?.toString()?.let(::normalizeNodeHostname) }
+            .toSet()
+
+    fun replaceProxyServers(
+        proxies: List<LinkedHashMap<String, Any?>>,
+        addressByHostname: Map<String, String>,
+    ): List<LinkedHashMap<String, Any?>> =
+        proxies.map { proxy ->
+            val hostname = proxy["server"]?.toString()?.let(::normalizeNodeHostname)
+            val ipAddress = hostname?.let(addressByHostname::get)
+            if (ipAddress == null) {
+                LinkedHashMap(proxy)
+            } else {
+                LinkedHashMap(proxy).apply { this["server"] = ipAddress }
+            }
+        }
+
     fun renderTemplate(
         templateYaml: String,
         proxies: List<LinkedHashMap<String, Any?>>,

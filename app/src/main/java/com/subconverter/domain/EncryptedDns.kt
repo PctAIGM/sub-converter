@@ -22,9 +22,14 @@ internal class EncryptedDns(
     private val config: SubscriptionDnsConfig,
     private val bootstrapClient: OkHttpClient,
 ) : Dns {
-    override fun lookup(hostname: String): List<InetAddress> {
+    override fun lookup(hostname: String): List<InetAddress> =
+        lookupRecords(hostname).map { it.address }
+
+    fun lookupRecords(hostname: String): List<DnsAddressRecord> {
         config.validate()?.let { throw UnknownHostException(it) }
-        val protocol = config.protocol ?: return Dns.SYSTEM.lookup(hostname)
+        val protocol = config.protocol ?: return Dns.SYSTEM.lookup(hostname).map {
+            DnsAddressRecord(it, SYSTEM_DNS_TTL_SECONDS)
+        }
         val ipv4 = runCatching { query(hostname, TYPE_A, protocol) }
         val ipv6 = runCatching { query(hostname, TYPE_AAAA, protocol) }
         val addresses = ipv4.getOrDefault(emptyList()) + ipv6.getOrDefault(emptyList())
@@ -38,14 +43,26 @@ internal class EncryptedDns(
         }
     }
 
-    private fun query(hostname: String, type: Int, protocol: DnsProtocol): List<InetAddress> {
+    fun lookupPreferredRecord(hostname: String): DnsAddressRecord {
+        config.validate()?.let { throw UnknownHostException(it) }
+        val protocol = config.protocol ?: return selectPreferredDnsRecord(
+            Dns.SYSTEM.lookup(hostname).map {
+                DnsAddressRecord(it, SYSTEM_DNS_TTL_SECONDS)
+            },
+        )
+        return queryPreferredDnsRecord(hostname) { type ->
+            query(hostname, type, protocol)
+        }
+    }
+
+    private fun query(hostname: String, type: Int, protocol: DnsProtocol): List<DnsAddressRecord> {
         val id = NEXT_ID.getAndIncrement() and 0xffff
         val query = DnsMessageCodec.createQuery(hostname, type, id)
         val response = when (protocol) {
             DnsProtocol.DOH -> queryDoh(query)
             DnsProtocol.DOT -> queryDot(query)
         }
-        return DnsMessageCodec.parseResponse(response, id, type)
+        return DnsMessageCodec.parseResponseRecords(response, id, type)
     }
 
     private fun queryDoh(query: ByteArray): ByteArray {
@@ -126,8 +143,32 @@ internal class EncryptedDns(
         private const val CONNECT_TIMEOUT_MILLIS = 15_000
         private const val READ_TIMEOUT_MILLIS = 30_000
         private const val MAX_DNS_MESSAGE_SIZE = 65_535
+        private const val SYSTEM_DNS_TTL_SECONDS = 3_600L
     }
 }
+
+internal fun queryPreferredDnsRecord(
+    hostname: String,
+    query: (Int) -> List<DnsAddressRecord>,
+): DnsAddressRecord {
+    val ipv4 = runCatching { query(1) }
+    ipv4.getOrDefault(emptyList()).firstOrNull()?.let { return it }
+
+    val ipv6 = runCatching { query(28) }
+    ipv6.getOrDefault(emptyList()).firstOrNull()?.let { return it }
+
+    val cause = ipv4.exceptionOrNull() ?: ipv6.exceptionOrNull()
+    throw UnknownHostException(
+        cause?.message ?: "指定 DNS 未返回 $hostname 的 IP 地址",
+    ).apply {
+        cause?.let(::initCause)
+    }
+}
+
+internal data class DnsAddressRecord(
+    val address: InetAddress,
+    val ttlSeconds: Long,
+)
 
 internal object DnsMessageCodec {
     fun createQuery(hostname: String, type: Int, id: Int): ByteArray {
@@ -157,7 +198,14 @@ internal object DnsMessageCodec {
         return message
     }
 
-    fun parseResponse(message: ByteArray, expectedId: Int, expectedType: Int): List<InetAddress> {
+    fun parseResponse(message: ByteArray, expectedId: Int, expectedType: Int): List<InetAddress> =
+        parseResponseRecords(message, expectedId, expectedType).map { it.address }
+
+    fun parseResponseRecords(
+        message: ByteArray,
+        expectedId: Int,
+        expectedType: Int,
+    ): List<DnsAddressRecord> {
         require(message.size >= 12) { "DNS 响应过短" }
         require(readU16(message, 0) == expectedId) { "DNS 响应 ID 不匹配" }
         val flags = readU16(message, 2)
@@ -175,19 +223,23 @@ internal object DnsMessageCodec {
             offset += 4
         }
 
-        val addresses = mutableListOf<InetAddress>()
+        val addresses = mutableListOf<DnsAddressRecord>()
         repeat(answerCount) {
             offset = skipName(message, offset)
             require(offset + 10 <= message.size) { "DNS 回答区损坏" }
             val type = readU16(message, offset)
             val dnsClass = readU16(message, offset + 2)
+            val ttlSeconds = readU32(message, offset + 4)
             val dataLength = readU16(message, offset + 8)
             offset += 10
             require(offset + dataLength <= message.size) { "DNS 记录数据损坏" }
             if (dnsClass == 1 && type == expectedType &&
                 ((type == 1 && dataLength == 4) || (type == 28 && dataLength == 16))
             ) {
-                addresses += InetAddress.getByAddress(message.copyOfRange(offset, offset + dataLength))
+                addresses += DnsAddressRecord(
+                    address = InetAddress.getByAddress(message.copyOfRange(offset, offset + dataLength)),
+                    ttlSeconds = ttlSeconds,
+                )
             }
             offset += dataLength
         }
@@ -221,6 +273,14 @@ internal object DnsMessageCodec {
         require(offset + 2 <= bytes.size) { "DNS 数据越界" }
         return ((bytes[offset].toInt() and 0xff) shl 8) or
             (bytes[offset + 1].toInt() and 0xff)
+    }
+
+    private fun readU32(bytes: ByteArray, offset: Int): Long {
+        require(offset + 4 <= bytes.size) { "DNS 数据越界" }
+        return ((bytes[offset].toLong() and 0xff) shl 24) or
+            ((bytes[offset + 1].toLong() and 0xff) shl 16) or
+            ((bytes[offset + 2].toLong() and 0xff) shl 8) or
+            (bytes[offset + 3].toLong() and 0xff)
     }
 
     private fun writeU16(bytes: ByteArray, offset: Int, value: Int) {

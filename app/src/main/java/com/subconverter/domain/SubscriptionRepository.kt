@@ -1,12 +1,16 @@
 package com.subconverter.domain
 
+import com.subconverter.data.NodeDnsCacheDao
 import com.subconverter.data.SubscriptionSourceDao
 import com.subconverter.data.SubscriptionSourceEntity
 import kotlinx.coroutines.flow.Flow
 
 class SubscriptionRepository(
     private val dao: SubscriptionSourceDao,
+    private val nodeDnsCacheDao: NodeDnsCacheDao,
     private val fetcher: SubscriptionFetcher,
+    private val yamlService: MihomoYamlService,
+    private val nodePreResolver: NodePreResolver,
     private val refreshScheduler: RefreshScheduler,
 ) {
     val sources: Flow<List<SubscriptionSourceEntity>> = dao.observeAll()
@@ -18,8 +22,18 @@ class SubscriptionRepository(
     }
 
     suspend fun update(source: SubscriptionSourceEntity) {
-        dao.update(source)
-        refreshScheduler.reschedule(source)
+        val previous = dao.getById(source.id)
+        val dnsChanged = previous != null &&
+            SubscriptionDnsConfig.from(previous).nodeResolutionFingerprint() !=
+            SubscriptionDnsConfig.from(source).nodeResolutionFingerprint()
+        val updatedSource = if (source.preResolveNodes && dnsChanged) {
+            nodeDnsCacheDao.deleteBySourceId(source.id)
+            source.copy(nodeResolveSuccessCount = 0, nodeResolveFailureCount = 0)
+        } else {
+            source
+        }
+        dao.update(updatedSource)
+        refreshScheduler.reschedule(updatedSource)
     }
 
     suspend fun delete(source: SubscriptionSourceEntity) {
@@ -60,6 +74,18 @@ class SubscriptionRepository(
             val resolvedAutoRefresh = source.autoRefreshEnabled || result.profileUpdateIntervalHours != null
             val resolvedInterval = result.profileUpdateIntervalHours?.toLong()?.times(60)
                 ?: source.refreshIntervalMinutes
+            val nodeResolution = if (source.preResolveNodes) {
+                nodePreResolver.refresh(
+                    sourceId = source.id,
+                    hostnames = yamlService.extractProxyServerHostnames(result.yamlBody),
+                    existingEntries = nodeDnsCacheDao.getBySourceId(source.id),
+                    config = SubscriptionDnsConfig.from(source),
+                ).also {
+                    nodeDnsCacheDao.replaceForSource(source.id, it.entries)
+                }
+            } else {
+                null
+            }
             dao.update(
                 source.copy(
                     name = resolvedName,
@@ -74,9 +100,20 @@ class SubscriptionRepository(
                     expireAtSeconds = result.userInfo?.expireAtSeconds,
                     autoRefreshEnabled = resolvedAutoRefresh,
                     refreshIntervalMinutes = resolvedInterval.coerceAtLeast(15),
+                    nodeResolveSuccessCount = nodeResolution?.successCount
+                        ?: source.nodeResolveSuccessCount,
+                    nodeResolveFailureCount = nodeResolution?.failureCount
+                        ?: source.nodeResolveFailureCount,
                 ),
             )
-            RefreshOutcome(sourceId, success = true, message = "刷新成功")
+            val message = nodeResolution?.let {
+                if (it.failureCount == 0) {
+                    "刷新成功，节点解析 ${it.successCount}/${it.successCount}"
+                } else {
+                    "刷新成功，节点解析 ${it.successCount}/${it.successCount + it.failureCount}（${it.failureCount} 失败）"
+                }
+            } ?: "刷新成功"
+            RefreshOutcome(sourceId, success = true, message = message)
         }.getOrElse { throwable ->
             dao.update(
                 source.copy(

@@ -18,7 +18,7 @@ MVVM, single-activity, Jetpack Compose UI. Layers: `core/` (DI), `data/` (Room, 
 ## Key Patterns
 
 - **State**: Single UiState data class collected via `StateFlow` + `collectAsStateWithLifecycle`
-- **DB migrations**: Room, manual `Migration` objects. Current version: 4
+- **DB migrations**: Room, manual `Migration` objects. Current version: 8
 - **Edit screens**: Full-screen `Scaffold` (not dialogs), toggled by enum state
 - **HTTP server**: Raw `ServerSocket` (not Ktor/OkHttp), runs on `Dispatchers.IO`
 - **Subscription headers**: Fetcher captures `profile-title`, `content-disposition`, `profile-web-page-url`; Server outputs them in response
@@ -30,6 +30,7 @@ Room, file: `sub_converter.db`
 
 Tables:
 - `subscription_sources` — id, name, url, website, userAgent, prefix, includeRegex, excludeRegex, cachedYaml, traffic fields, etc.
+- `node_dns_cache` — sourceId, hostname, ipAddress, expiresAt, configFingerprint
 - `templates` — id, name, yamlBody, remoteUrl, isDefault
 - `output_profiles` — id, name, sourceIds (comma-separated), templateId, prefix, includeRegex, excludeRegex, updateIntervalHours
 

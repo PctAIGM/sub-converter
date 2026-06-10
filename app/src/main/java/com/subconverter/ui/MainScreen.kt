@@ -290,7 +290,7 @@ fun MainScreen(viewModel: MainViewModel) {
             initialUrl = scannedUrl,
             allSources = state.sources,
             onDismiss = { editScreen = EditScreen.None },
-            onConfirm = { source, name, url, userAgent, prefix, include, exclude, auto, interval, dnsConfig ->
+            onConfirm = { source, name, url, userAgent, prefix, include, exclude, auto, interval, preResolve, dnsConfig ->
                 viewModel.saveSource(
                     source,
                     name,
@@ -301,6 +301,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     exclude,
                     auto,
                     interval,
+                    preResolve,
                     dnsConfig,
                 )
                 editScreen = EditScreen.None
@@ -416,6 +417,7 @@ private fun SourceEditScreen(
         String,
         Boolean,
         Long,
+        Boolean,
         SubscriptionDnsConfig,
     ) -> Unit,
 ) {
@@ -434,6 +436,9 @@ private fun SourceEditScreen(
     }
     var allowHostnameMismatch by rememberSaveable(source?.id) {
         mutableStateOf(source?.allowHostnameMismatch ?: false)
+    }
+    var preResolveNodes by rememberSaveable(source?.id) {
+        mutableStateOf(source?.preResolveNodes ?: false)
     }
 
     val nodeNames = remember(source?.cachedYaml) {
@@ -479,6 +484,7 @@ private fun SourceEditScreen(
                 exclude,
                 auto,
                 interval.toLongOrNull() ?: 720,
+                preResolveNodes,
                 dnsConfig,
             )
         },
@@ -571,12 +577,25 @@ private fun SourceEditScreen(
                             )
                         }
                     }
+                    FieldDivider()
+                    iOSFormSwitch(
+                        label = "预解析节点域名",
+                        subtitle = "刷新时解析节点 IP，并按 DNS TTL 自动更新",
+                        checked = preResolveNodes,
+                        onCheckedChange = { preResolveNodes = it },
+                    )
                 }
                 Text(
                     when {
+                        parsedDnsProtocol == null && preResolveNodes ->
+                            "订阅更新和节点预解析均使用系统 DNS，节点缓存有效期为 1 小时。"
                         parsedDnsProtocol == null -> "不覆盖解析，订阅更新使用系统 DNS。"
                         parsedConnectionMode == DnsConnectionMode.PRESERVE_DOMAIN ->
-                            "连接指定 DNS 返回的 IP，同时保留原域名、Host 与 SNI。"
+                            if (preResolveNodes) {
+                                "订阅连接保留域名；节点 server 将使用指定 DNS 预解析的 IP。"
+                            } else {
+                                "连接指定 DNS 返回的 IP，同时保留原域名、Host 与 SNI。"
+                            }
                         else -> "URL 主机将改写为解析 IP，部分 HTTPS 或 CDN 订阅可能无法访问。"
                     },
                     style = MaterialTheme.typography.labelSmall,
@@ -2731,16 +2750,25 @@ private fun trafficText(source: SubscriptionSourceEntity): String {
 }
 
 private fun sourceDnsLabel(source: SubscriptionSourceEntity): String? {
-    val protocol = DnsProtocol.fromStorage(source.dnsProtocol) ?: return null
-    val preset = PublicDnsPresets.all.firstOrNull {
-        it.protocol == protocol && it.server.equals(source.dnsServer.trim(), ignoreCase = true)
+    val protocol = DnsProtocol.fromStorage(source.dnsProtocol)
+    val downloadDns = protocol?.let {
+        val preset = PublicDnsPresets.all.firstOrNull { preset ->
+            preset.protocol == it && preset.server.equals(source.dnsServer.trim(), ignoreCase = true)
+        }
+        val resolver = preset?.label ?: "自定义 ${it.name}"
+        val mode = when (DnsConnectionMode.fromStorage(source.dnsConnectionMode)) {
+            DnsConnectionMode.PRESERVE_DOMAIN -> "保留域名"
+            DnsConnectionMode.IP_URL -> "IP URL"
+        }
+        "$resolver · $mode"
     }
-    val resolver = preset?.label ?: "自定义 ${protocol.name}"
-    val mode = when (DnsConnectionMode.fromStorage(source.dnsConnectionMode)) {
-        DnsConnectionMode.PRESERVE_DOMAIN -> "保留域名"
-        DnsConnectionMode.IP_URL -> "IP URL"
+    val nodeDns = if (source.preResolveNodes) {
+        val total = source.nodeResolveSuccessCount + source.nodeResolveFailureCount
+        "节点预解析 ${source.nodeResolveSuccessCount}/$total"
+    } else {
+        null
     }
-    return "$resolver · $mode"
+    return listOfNotNull(downloadDns, nodeDns).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
 private fun overrideCardSubtitle(template: TemplateEntity): String {

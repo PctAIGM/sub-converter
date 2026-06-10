@@ -117,4 +117,32 @@ class MihomoYamlServiceTest {
         assertEquals("example.com", proxies[0]["server"])
         assertEquals(443, proxies[0]["port"])
     }
+
+    @Test
+    fun replacesOnlyProxyServerUsingNormalizedHostname() {
+        val input = """
+            proxies:
+              - name: Node
+                type: vmess
+                server: NODE.Example.COM.
+                port: 443
+                sni: tls.example.com
+                ws-opts:
+                  headers:
+                    Host: ws.example.com
+        """.trimIndent()
+
+        val hostnames = service.extractProxyServerHostnames(input)
+        val replaced = service.replaceProxyServers(
+            service.extractProxies(input),
+            mapOf("node.example.com" to "1.2.3.4"),
+        )
+
+        assertEquals(setOf("node.example.com"), hostnames)
+        assertEquals("1.2.3.4", replaced.single()["server"])
+        assertEquals("tls.example.com", replaced.single()["sni"])
+        val wsOptions = replaced.single()["ws-opts"] as Map<*, *>
+        val headers = wsOptions["headers"] as Map<*, *>
+        assertEquals("ws.example.com", headers["Host"])
+    }
 }

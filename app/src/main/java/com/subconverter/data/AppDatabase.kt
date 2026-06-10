@@ -8,14 +8,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [
         SubscriptionSourceEntity::class,
+        NodeDnsCacheEntity::class,
         TemplateEntity::class,
         OutputProfileEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun subscriptionSourceDao(): SubscriptionSourceDao
+    abstract fun nodeDnsCacheDao(): NodeDnsCacheDao
     abstract fun templateDao(): TemplateDao
     abstract fun outputProfileDao(): OutputProfileDao
 
@@ -67,6 +69,36 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE subscription_sources ADD COLUMN allowHostnameMismatch INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        val Migration7To8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE subscription_sources ADD COLUMN preResolveNodes INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE subscription_sources ADD COLUMN nodeResolveSuccessCount INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE subscription_sources ADD COLUMN nodeResolveFailureCount INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS node_dns_cache (
+                        sourceId INTEGER NOT NULL,
+                        hostname TEXT NOT NULL,
+                        ipAddress TEXT NOT NULL,
+                        expiresAt INTEGER NOT NULL,
+                        configFingerprint TEXT NOT NULL,
+                        PRIMARY KEY(sourceId, hostname),
+                        FOREIGN KEY(sourceId) REFERENCES subscription_sources(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_node_dns_cache_sourceId ON node_dns_cache(sourceId)",
                 )
             }
         }
