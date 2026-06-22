@@ -77,6 +77,9 @@ interface OutputProfileDao {
     @Query("SELECT * FROM output_profiles ORDER BY id DESC")
     fun observeAll(): Flow<List<OutputProfileEntity>>
 
+    @Query("SELECT * FROM output_profiles ORDER BY id DESC")
+    suspend fun getAll(): List<OutputProfileEntity>
+
     @Query("SELECT * FROM output_profiles WHERE id = :id")
     suspend fun getById(id: Long): OutputProfileEntity?
 

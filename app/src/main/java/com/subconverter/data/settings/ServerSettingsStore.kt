@@ -20,6 +20,7 @@ data class ServerSettings(
     val port: Int = 9876,
     val token: String = "",
     val globalUserAgent: String = SubscriptionFetcher.DEFAULT_USER_AGENT,
+    val gistToken: String = "",
 )
 
 class ServerSettingsStore(private val context: Context) {
@@ -33,6 +34,7 @@ class ServerSettingsStore(private val context: Context) {
             globalUserAgent = preferences[Keys.GlobalUserAgent]
                 .orEmpty()
                 .ifBlank { SubscriptionFetcher.DEFAULT_USER_AGENT },
+            gistToken = preferences[Keys.GistToken].orEmpty(),
         )
     }
 
@@ -46,6 +48,7 @@ class ServerSettingsStore(private val context: Context) {
             preferences[Keys.GlobalUserAgent] = settings.globalUserAgent
                 .trim()
                 .ifBlank { SubscriptionFetcher.DEFAULT_USER_AGENT }
+            preferences[Keys.GistToken] = settings.gistToken.trim()
         }
     }
 
@@ -64,5 +67,6 @@ class ServerSettingsStore(private val context: Context) {
         val Port = intPreferencesKey("port")
         val Token = stringPreferencesKey("token")
         val GlobalUserAgent = stringPreferencesKey("global_user_agent")
+        val GistToken = stringPreferencesKey("gist_token")
     }
 }
