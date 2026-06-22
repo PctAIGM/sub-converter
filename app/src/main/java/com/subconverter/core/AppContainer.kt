@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.subconverter.data.AppDatabase
 import com.subconverter.data.settings.ServerSettingsStore
+import com.subconverter.domain.GistUploader
 import com.subconverter.domain.MihomoYamlService
 import com.subconverter.domain.NodePreResolver
 import com.subconverter.domain.OutputRepository
@@ -36,16 +37,8 @@ class AppContainer private constructor(context: Context) {
     val subscriptionFetcher = SubscriptionFetcher()
     val remoteTextFetcher = RemoteTextFetcher()
     private val nodePreResolver = NodePreResolver()
+    val gistUploader = GistUploader()
     val refreshScheduler = RefreshScheduler(appContext)
-
-    val subscriptionRepository = SubscriptionRepository(
-        dao = database.subscriptionSourceDao(),
-        nodeDnsCacheDao = database.nodeDnsCacheDao(),
-        fetcher = subscriptionFetcher,
-        yamlService = yamlService,
-        nodePreResolver = nodePreResolver,
-        refreshScheduler = refreshScheduler,
-    )
 
     val outputRepository = OutputRepository(
         sourceDao = database.subscriptionSourceDao(),
@@ -54,6 +47,18 @@ class AppContainer private constructor(context: Context) {
         outputDao = database.outputProfileDao(),
         yamlService = yamlService,
         remoteTextFetcher = remoteTextFetcher,
+        settingsStore = settingsStore,
+        gistUploader = gistUploader,
+    )
+
+    val subscriptionRepository = SubscriptionRepository(
+        dao = database.subscriptionSourceDao(),
+        nodeDnsCacheDao = database.nodeDnsCacheDao(),
+        fetcher = subscriptionFetcher,
+        yamlService = yamlService,
+        nodePreResolver = nodePreResolver,
+        refreshScheduler = refreshScheduler,
+        outputRepository = outputRepository,
     )
 
     val localHttpServer = LocalHttpServer(outputRepository)

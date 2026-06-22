@@ -12,6 +12,7 @@ class SubscriptionRepository(
     private val yamlService: MihomoYamlService,
     private val nodePreResolver: NodePreResolver,
     private val refreshScheduler: RefreshScheduler,
+    private val outputRepository: OutputRepository,
 ) {
     val sources: Flow<List<SubscriptionSourceEntity>> = dao.observeAll()
 
@@ -113,7 +114,9 @@ class SubscriptionRepository(
                     "刷新成功，节点解析 ${it.successCount}/${it.successCount + it.failureCount}（${it.failureCount} 失败）"
                 }
             } ?: "刷新成功"
-            RefreshOutcome(sourceId, success = true, message = message)
+            val summary = runCatching { outputRepository.uploadAffectedProfiles(sourceId) }
+                .getOrElse { GistUploadSummary(tokenMissing = true) }
+            RefreshOutcome(sourceId, success = true, message = message + gistSuffix(summary))
         }.getOrElse { throwable ->
             dao.update(
                 source.copy(
@@ -122,5 +125,13 @@ class SubscriptionRepository(
             )
             RefreshOutcome(sourceId, success = false, message = throwable.message ?: "刷新失败")
         }
+    }
+
+    private fun gistSuffix(summary: GistUploadSummary): String = when {
+        summary.tokenMissing -> ""
+        summary.attempted == 0 -> ""
+        summary.succeeded == summary.attempted -> " · Gist 已更新"
+        summary.succeeded == 0 && summary.firstError != null -> " · Gist 上传失败: ${summary.firstError}"
+        else -> " · Gist 部分成功 ${summary.succeeded}/${summary.attempted}"
     }
 }
