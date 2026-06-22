@@ -24,3 +24,4 @@ local.properties
 captures/
 
 app/keystore/release.jks
+nul
