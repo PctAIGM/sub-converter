@@ -84,4 +84,6 @@ data class OutputProfileEntity(
     val overrideIds: String = "",
     val updateIntervalHours: Int = 12,
     val fetchCount: Long = 0,
+    val uploadToGist: Boolean = false,
+    val gistId: String = "",
 )

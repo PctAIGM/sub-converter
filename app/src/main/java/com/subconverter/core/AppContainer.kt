@@ -28,6 +28,7 @@ class AppContainer private constructor(context: Context) {
         .addMigrations(AppDatabase.Migration5To6)
         .addMigrations(AppDatabase.Migration6To7)
         .addMigrations(AppDatabase.Migration7To8)
+        .addMigrations(AppDatabase.Migration8To9)
         .build()
 
     val settingsStore = ServerSettingsStore(appContext)

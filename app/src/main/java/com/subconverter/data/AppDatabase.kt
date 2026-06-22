@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TemplateEntity::class,
         OutputProfileEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -100,6 +100,13 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_node_dns_cache_sourceId ON node_dns_cache(sourceId)",
                 )
+            }
+        }
+
+        val Migration8To9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE output_profiles ADD COLUMN uploadToGist INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE output_profiles ADD COLUMN gistId TEXT NOT NULL DEFAULT ''")
             }
         }
     }
