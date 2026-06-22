@@ -128,6 +128,7 @@ class SubscriptionRepository(
     }
 
     private fun gistSuffix(summary: GistUploadSummary): String = when {
+        summary.tokenMissing && summary.pendingCount > 0 -> " · ${summary.pendingCount} 个输出待上传 Gist，但未配置 Token"
         summary.tokenMissing -> ""
         summary.attempted == 0 -> ""
         summary.succeeded == summary.attempted -> " · Gist 已更新"

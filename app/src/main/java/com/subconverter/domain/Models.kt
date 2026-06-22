@@ -78,6 +78,7 @@ data class GistResult(
 
 data class GistUploadSummary(
     val tokenMissing: Boolean,
+    val pendingCount: Int = 0,
     val attempted: Int = 0,
     val succeeded: Int = 0,
     val firstError: String? = null,

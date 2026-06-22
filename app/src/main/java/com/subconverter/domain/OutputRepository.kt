@@ -172,37 +172,42 @@ class OutputRepository(
     }
 
     suspend fun uploadAffectedProfiles(sourceId: Long): GistUploadSummary {
+        val matched = outputDao.getAll()
+            .filter { it.enabled && it.uploadToGist && sourceId in parseIds(it.sourceIds) }
+        if (matched.isEmpty()) return GistUploadSummary(tokenMissing = false, pendingCount = 0)
+
         val gistToken = settingsStore.current().gistToken
-        if (gistToken.isBlank()) return GistUploadSummary(tokenMissing = true)
+        if (gistToken.isBlank()) {
+            return GistUploadSummary(tokenMissing = true, pendingCount = matched.size)
+        }
+
         var attempted = 0
         var succeeded = 0
         var firstError: String? = null
-        outputDao.getAll()
-            .asSequence()
-            .filter { it.enabled && it.uploadToGist && sourceId in parseIds(it.sourceIds) }
-            .forEach { profile ->
-                runCatching {
-                    val rendered = renderProfile(profile.id) ?: return@runCatching
-                    val filename = "${sanitizeFilename(profile.name)}.yml"
-                    val result = gistUploader.upload(
-                        token = gistToken,
-                        gistId = profile.gistId,
-                        filename = filename,
-                        content = rendered.yamlBody,
-                    )
-                    attempted++
-                    if (result.success) {
-                        succeeded++
-                        if (result.gistId != null && result.gistId != profile.gistId) {
-                            outputDao.update(profile.copy(gistId = result.gistId))
-                        }
-                    } else if (firstError == null) {
-                        firstError = result.message
+        matched.forEach { profile ->
+            runCatching {
+                val rendered = renderProfile(profile.id) ?: return@runCatching
+                val filename = "${sanitizeFilename(profile.name)}.yml"
+                val result = gistUploader.upload(
+                    token = gistToken,
+                    gistId = profile.gistId,
+                    filename = filename,
+                    content = rendered.yamlBody,
+                )
+                attempted++
+                if (result.success) {
+                    succeeded++
+                    if (result.gistId != null && result.gistId != profile.gistId) {
+                        outputDao.update(profile.copy(gistId = result.gistId))
                     }
+                } else if (firstError == null) {
+                    firstError = result.message
                 }
             }
+        }
         return GistUploadSummary(
             tokenMissing = false,
+            pendingCount = matched.size,
             attempted = attempted,
             succeeded = succeeded,
             firstError = firstError,
