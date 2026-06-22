@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
@@ -95,6 +96,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -2193,6 +2196,7 @@ private fun ServerScreen(
     var allowLan by rememberSaveable(settings.allowLan) { mutableStateOf(settings.allowLan) }
     var autoStartOnBoot by rememberSaveable(settings.autoStartOnBoot) { mutableStateOf(settings.autoStartOnBoot) }
     var globalUserAgent by rememberSaveable(settings.globalUserAgent) { mutableStateOf(settings.globalUserAgent) }
+    var gistToken by rememberSaveable(settings.gistToken) { mutableStateOf(settings.gistToken) }
     val lanAddress = remember(allowLan) { if (allowLan) localLanAddress() else null }
     val allowLanDescription = if (allowLan) {
         "已开启，使用 ${lanAddress ?: "手机局域网 IP"} 分享"
@@ -2205,6 +2209,7 @@ private fun ServerScreen(
         allowLan = allowLan,
         autoStartOnBoot = autoStartOnBoot,
         globalUserAgent = globalUserAgent,
+        gistToken = gistToken,
     )
 
     LazyColumn(
@@ -2226,6 +2231,7 @@ private fun ServerScreen(
                             port = port.toIntOrNull() ?: 9876,
                             token = token,
                             globalUserAgent = globalUserAgent,
+                            gistToken = gistToken,
                         ),
                     )
                 },
@@ -2292,6 +2298,46 @@ private fun ServerScreen(
                     )
                     Text(
                         "拉取订阅时使用的默认 User-Agent",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
+            }
+        }
+
+        item {
+            iOSGroupedCard {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "GitHub Gist Token",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = gistToken,
+                        onValueChange = { gistToken = it },
+                        placeholder = {
+                            Text(
+                                "ghp_xxx（需 gist 权限）",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            )
+                        },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "上传配置到 Gist 用的个人访问令牌，需 gist 权限。留空则不开启上传。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
