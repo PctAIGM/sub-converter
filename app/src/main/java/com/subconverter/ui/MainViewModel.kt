@@ -262,6 +262,7 @@ class MainViewModel(
         sourceIds: List<Long>,
         overrideIds: List<Long>,
         updateIntervalHours: Int,
+        uploadToGist: Boolean,
     ) {
         viewModelScope.launch {
             if (name.isBlank() || sourceIds.isEmpty()) {
@@ -276,6 +277,8 @@ class MainViewModel(
                 excludeRegex = "",
                 overrideIds = overrideIds.distinct().joinToString(","),
                 updateIntervalHours = updateIntervalHours.coerceAtLeast(1),
+                uploadToGist = uploadToGist,
+                gistId = existing?.gistId ?: "",
             )
 
             if (existing == null) {
@@ -299,6 +302,7 @@ class MainViewModel(
         sourceIds: String,
         overrideIds: String,
         updateIntervalHours: Int,
+        uploadToGist: Boolean = false,
     ) {
         saveProfile(
             existing = null,
@@ -306,6 +310,7 @@ class MainViewModel(
             sourceIds = sourceIds.split(',').mapNotNull { it.trim().toLongOrNull() },
             overrideIds = overrideIds.split(',').mapNotNull { it.trim().toLongOrNull() },
             updateIntervalHours = updateIntervalHours,
+            uploadToGist = uploadToGist,
         )
     }
 
