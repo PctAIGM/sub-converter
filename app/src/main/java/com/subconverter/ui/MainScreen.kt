@@ -321,9 +321,10 @@ fun MainScreen(viewModel: MainViewModel) {
             profile = editingProfile,
             sources = state.sources,
             templates = state.templates,
+            gistToken = state.settings.gistToken,
             onDismiss = { editScreen = EditScreen.None },
-            onConfirm = { profile, name, sourceIds, overrideIds, interval ->
-                viewModel.saveProfile(profile, name, sourceIds, overrideIds, interval)
+            onConfirm = { profile, name, sourceIds, overrideIds, interval, uploadToGist ->
+                viewModel.saveProfile(profile, name, sourceIds, overrideIds, interval, uploadToGist)
                 editScreen = EditScreen.None
             },
         )
@@ -838,8 +839,9 @@ private fun OutputEditScreen(
     profile: OutputProfileEntity?,
     sources: List<SubscriptionSourceEntity>,
     templates: List<TemplateEntity>,
+    gistToken: String,
     onDismiss: () -> Unit,
-    onConfirm: (OutputProfileEntity?, String, List<Long>, List<Long>, Int) -> Unit,
+    onConfirm: (OutputProfileEntity?, String, List<Long>, List<Long>, Int, Boolean) -> Unit,
 ) {
     var name by rememberSaveable(profile?.id) { mutableStateOf(profile?.name ?: "Mihomo Output") }
     var selectedSourceIds by rememberSaveable(profile?.id, sources.size) {
@@ -849,12 +851,23 @@ private fun OutputEditScreen(
         mutableStateOf(profile?.overrideIds.orEmpty())
     }
     var interval by rememberSaveable(profile?.id) { mutableStateOf((profile?.updateIntervalHours ?: 12).toString()) }
+    var uploadToGist by rememberSaveable(profile?.id) { mutableStateOf(profile?.uploadToGist ?: false) }
 
     val selectedSet = remember(selectedSourceIds) {
         selectedSourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
     }
     val selectedOverrideIdList = remember(selectedOverrideIds) {
         parseIdList(selectedOverrideIds)
+    }
+
+    val gistSubtitle: String
+    val gistSubtitleColor: Color
+    if (gistToken.isBlank()) {
+        gistSubtitle = "未配置 Gist Token（去服务页设置）"
+        gistSubtitleColor = MaterialTheme.colorScheme.error
+    } else {
+        gistSubtitle = "刷新订阅后自动上传到 GitHub Gist"
+        gistSubtitleColor = MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     EditScreenScaffold(
@@ -867,6 +880,7 @@ private fun OutputEditScreen(
                 selectedSourceIds.split(',').mapNotNull { it.trim().toLongOrNull() },
                 selectedOverrideIdList,
                 interval.toIntOrNull() ?: 12,
+                uploadToGist,
             )
         },
         saveEnabled = name.isNotBlank() && selectedSet.isNotEmpty(),
@@ -949,6 +963,18 @@ private fun OutputEditScreen(
             item {
                 iOSGroupedCard {
                     SmallFormField("更新间隔（小时）", interval, { interval = it.filter(Char::isDigit).take(4) }, "12")
+                }
+            }
+
+            item {
+                iOSGroupedCard {
+                    iOSFormSwitch(
+                        label = "上传到 Gist",
+                        subtitle = gistSubtitle,
+                        checked = uploadToGist,
+                        onCheckedChange = { uploadToGist = it },
+                        subtitleColor = gistSubtitleColor,
+                    )
                 }
             }
         }
@@ -2403,6 +2429,7 @@ private fun iOSFormSwitch(
     subtitle: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Row(
         modifier = Modifier
@@ -2416,7 +2443,7 @@ private fun iOSFormSwitch(
                 Text(
                     it,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = subtitleColor,
                 )
             }
         }
