@@ -68,3 +68,17 @@ fun SubscriptionSourceEntity.userInfo(): SubscriptionUserInfo? {
         expireAtSeconds = expireAtSeconds,
     )
 }
+
+data class GistResult(
+    val success: Boolean,
+    val gistId: String? = null,
+    val rawUrl: String? = null,
+    val message: String,
+)
+
+data class GistUploadSummary(
+    val tokenMissing: Boolean,
+    val attempted: Int = 0,
+    val succeeded: Int = 0,
+    val firstError: String? = null,
+)
