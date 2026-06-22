@@ -7,6 +7,7 @@ import com.subconverter.data.SubscriptionSourceDao
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateDao
 import com.subconverter.data.TemplateEntity
+import com.subconverter.data.settings.ServerSettingsStore
 import kotlinx.coroutines.flow.Flow
 
 class OutputRepository(
@@ -16,6 +17,8 @@ class OutputRepository(
     private val outputDao: OutputProfileDao,
     private val yamlService: MihomoYamlService,
     private val remoteTextFetcher: RemoteTextFetcher,
+    private val settingsStore: ServerSettingsStore,
+    private val gistUploader: GistUploader,
 ) {
     val templates: Flow<List<TemplateEntity>> = templateDao.observeAll()
     val profiles: Flow<List<OutputProfileEntity>> = outputDao.observeAll()
@@ -168,7 +171,48 @@ class OutputRepository(
         )
     }
 
-    private fun parseIds(rawIds: String): List<Long> =
+    suspend fun uploadAffectedProfiles(sourceId: Long): GistUploadSummary {
+        val gistToken = settingsStore.current().gistToken
+        if (gistToken.isBlank()) return GistUploadSummary(tokenMissing = true)
+        var attempted = 0
+        var succeeded = 0
+        var firstError: String? = null
+        outputDao.getAll()
+            .asSequence()
+            .filter { it.enabled && it.uploadToGist && sourceId in parseIds(it.sourceIds) }
+            .forEach { profile ->
+                runCatching {
+                    val rendered = renderProfile(profile.id) ?: return@runCatching
+                    val filename = "${sanitizeFilename(profile.name)}.yml"
+                    val result = gistUploader.upload(
+                        token = gistToken,
+                        gistId = profile.gistId,
+                        filename = filename,
+                        content = rendered.yamlBody,
+                    )
+                    attempted++
+                    if (result.success) {
+                        succeeded++
+                        if (result.gistId != null && result.gistId != profile.gistId) {
+                            outputDao.update(profile.copy(gistId = result.gistId))
+                        }
+                    } else if (firstError == null) {
+                        firstError = result.message
+                    }
+                }
+            }
+        return GistUploadSummary(
+            tokenMissing = false,
+            attempted = attempted,
+            succeeded = succeeded,
+            firstError = firstError,
+        )
+    }
+
+    private fun sanitizeFilename(name: String): String =
+        name.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "config" }
+
+    internal fun parseIds(rawIds: String): List<Long> =
         rawIds.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
 
     private fun aggregateUserInfo(sources: List<SubscriptionSourceEntity>): SubscriptionUserInfo? {
