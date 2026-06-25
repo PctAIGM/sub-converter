@@ -3,6 +3,7 @@ package com.subconverter.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
@@ -46,6 +48,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.CloudDownload
@@ -69,6 +73,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -78,11 +85,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -111,7 +121,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subconverter.data.OutputProfileEntity
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
+import com.subconverter.data.TemplateType
 import com.subconverter.data.settings.ServerSettings
+import com.subconverter.domain.DEFAULT_OVERRIDE_JS
 import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
 import com.subconverter.domain.DnsConnectionMode
 import com.subconverter.domain.DnsProtocol
@@ -137,7 +149,7 @@ private enum class MainTab(
     Server("服务", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
-private enum class EditScreen { None, Source, Template, Output, Nodes, OutputNodes, OverrideHelp, Scan, QrShare }
+private enum class EditScreen { None, Source, Template, Output, Nodes, OutputPreview, OverrideHelp, Scan, QrShare }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -254,7 +266,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 onCopied = { viewModel.showMessage("订阅 URL 已复制") },
                 onViewNodes = {
                     viewingProfile = it
-                    editScreen = EditScreen.OutputNodes
+                    viewModel.previewProfile(it.id)
+                    editScreen = EditScreen.OutputPreview
                 },
                 onQrShare = {
                     sharingUrl = it
@@ -316,8 +329,8 @@ fun MainScreen(viewModel: MainViewModel) {
         EditScreen.Template -> TemplateEditScreen(
             template = editingTemplate,
             onDismiss = { editScreen = EditScreen.None },
-            onConfirm = { template, name, remoteUrl, body, enabled, global ->
-                viewModel.saveTemplate(template, name, remoteUrl, body, enabled, global)
+            onConfirm = { template, name, remoteUrl, body, enabled, global, type ->
+                viewModel.saveTemplate(template, name, remoteUrl, body, enabled, global, type)
                 editScreen = EditScreen.None
             },
         )
@@ -341,13 +354,13 @@ fun MainScreen(viewModel: MainViewModel) {
             )
         }
 
-        EditScreen.OutputNodes -> viewingProfile?.let { profile ->
-            OutputNodePreviewScreen(
-                profile = profile,
-                sources = state.sources,
-                onDismiss = { editScreen = EditScreen.None },
-            )
-        }
+        EditScreen.OutputPreview -> OutputPreviewScreen(
+            previewState = viewModel.previewState.collectAsStateWithLifecycle().value,
+            onDismiss = {
+                viewModel.clearPreview()
+                editScreen = EditScreen.None
+            },
+        )
 
         EditScreen.OverrideHelp -> OverrideHelpScreen(
             onDismiss = { editScreen = EditScreen.None },
@@ -669,20 +682,28 @@ private fun SourceEditScreen(
 private fun TemplateEditScreen(
     template: TemplateEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (TemplateEntity?, String, String, String, Boolean, Boolean) -> Unit,
+    onConfirm: (TemplateEntity?, String, String, String, Boolean, Boolean, String) -> Unit,
 ) {
     var name by rememberSaveable(template?.id) { mutableStateOf(template?.name ?: "YAML 覆写") }
     var remoteUrl by rememberSaveable(template?.id) { mutableStateOf(template?.remoteUrl.orEmpty()) }
     var enabled by rememberSaveable(template?.id) { mutableStateOf(template?.enabled ?: true) }
     var global by rememberSaveable(template?.id) { mutableStateOf(template?.global ?: false) }
+    var type by rememberSaveable(template?.id) { mutableStateOf(template?.type ?: TemplateType.YAML) }
     var body by rememberSaveable(template?.id) {
-        mutableStateOf(template?.yamlBody ?: DEFAULT_OVERRIDE_YAML.trimIndent())
+        mutableStateOf(
+            template?.yamlBody ?: DEFAULT_OVERRIDE_YAML.trimIndent(),
+        )
+    }
+
+    fun defaultBodyFor(type: String) = when (type) {
+        TemplateType.JS -> DEFAULT_OVERRIDE_JS.trimIndent()
+        else -> DEFAULT_OVERRIDE_YAML.trimIndent()
     }
 
     EditScreenScaffold(
         title = if (template == null) "添加覆写" else "编辑覆写",
         onDismiss = onDismiss,
-        onSave = { onConfirm(template, name, remoteUrl, body, enabled, global) },
+        onSave = { onConfirm(template, name, remoteUrl, body, enabled, global, type) },
         saveEnabled = name.isNotBlank(),
     ) { padding ->
         LazyColumn(
@@ -695,6 +716,41 @@ private fun TemplateEditScreen(
         ) {
             item {
                 iOSGroupedCard {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("覆写类型", style = MaterialTheme.typography.bodySmall)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            val options = listOf(TemplateType.YAML to "YAML", TemplateType.JS to "JavaScript")
+                            options.forEachIndexed { index, (value, label) ->
+                                SegmentedButton(
+                                    selected = type == value,
+                                    onClick = {
+                                        if (type != value) {
+                                            if (body.isBlank() || body == defaultBodyFor(type)) {
+                                                body = defaultBodyFor(value)
+                                            }
+                                            if (name == "YAML 覆写" || name == "JavaScript 覆写") {
+                                                name = "$label 覆写"
+                                            }
+                                            type = value
+                                        }
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                                ) {
+                                    Text(label, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                        Text(
+                            if (type == TemplateType.JS) {
+                                "JavaScript 入口为 main(config)，返回修改后的对象；在所有 YAML 覆写之后执行"
+                            } else {
+                                "YAML 覆写，按 deep-merge 语法合并到配置"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    FieldDivider()
                     SmallFormField("名称", name, { name = it }, "覆写名称")
                     FieldDivider()
                     SmallFormField("远程 URL", remoteUrl, { remoteUrl = it }, "留空为本地覆写")
@@ -708,7 +764,12 @@ private fun TemplateEditScreen(
                 OutlinedTextField(
                     value = body,
                     onValueChange = { body = it },
-                    label = { Text("YAML 内容", style = MaterialTheme.typography.bodySmall) },
+                    label = {
+                        Text(
+                            if (type == TemplateType.JS) "脚本内容" else "YAML 内容",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    },
                     minLines = 12,
                     maxLines = 30,
                     modifier = Modifier.fillMaxWidth(),
@@ -768,7 +829,7 @@ private fun OverrideHelpScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "基础配置生成后，先应用全局覆写，再按输出配置里的顺序应用专属覆写。同一个覆写只会执行一次。",
+                            "基础配置生成后，先应用全局覆写，再按输出配置里的顺序应用专属覆写。同一个覆写只会执行一次。同一输出中先合并所有 YAML 覆写，再按顺序执行 JavaScript 覆写。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -815,6 +876,28 @@ private fun OverrideHelpScreen(
                     dns:
                       enable: true
                       enhanced-mode: fake-ip
+                    """.trimIndent(),
+                )
+            }
+
+            item {
+                SectionHeader("JavaScript 覆写")
+                iOSGroupedCard {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "入口为 main(config)，接收解析后的完整配置对象，返回修改后的对象即可。JavaScript 覆写在所有 YAML 覆写之后执行。脚本出错会中断该输出的渲染。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                OverrideHelpCodeBlock(
+                    """
+                    function main(config) {
+                      // 在 rules 开头插入一条规则
+                      config.rules.unshift("DOMAIN,google.com,DIRECT");
+                      return config;
+                    }
                     """.trimIndent(),
                 )
             }
@@ -1241,47 +1324,109 @@ private fun NodePreviewScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun OutputNodePreviewScreen(
-    profile: OutputProfileEntity,
-    sources: List<SubscriptionSourceEntity>,
-    onDismiss: () -> Unit,
-) {
-    val profileSourceIds = remember(profile.sourceIds) {
-        profile.sourceIds.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
-    }
-    val profileSources = remember(profileSourceIds, sources) {
-        profileSourceIds.mapNotNull { id -> sources.find { it.id == id } }
-            .filter { it.cachedYaml.isNotBlank() }
-    }
+private const val COLLAPSE_THRESHOLD = 20
 
-    val allNodes = remember(profileSources) {
-        profileSources.flatMap { source ->
-            val names = extractNodeNames(source.cachedYaml)
-            val srcIncludeRe = source.includeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
-            val srcExcludeRe = source.excludeRegex.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
-            names.mapNotNull { name ->
-                val included = srcIncludeRe == null || srcIncludeRe.containsMatchIn(name)
-                val excluded = srcExcludeRe != null && srcExcludeRe.containsMatchIn(name)
-                if (!included || excluded) return@mapNotNull null
-                source.prefix + name
+private data class TreeRow(
+    val id: Int,
+    val depth: Int,
+    val key: String?,
+    val value: String?,
+    val childCount: Int,
+    val isListItem: Boolean,
+    val childIds: List<Int>,
+) {
+    val collapsible get() = childCount > 0
+}
+
+private fun parseYamlToTree(yamlBody: String): List<TreeRow> {
+    val loaded = runCatching { org.yaml.snakeyaml.Yaml().load<Any?>(yamlBody) }.getOrNull()
+        ?: return emptyList()
+    val rows = mutableListOf<TreeRow>()
+    buildRows(loaded, -1, false, null, rows)
+    return rows
+}
+
+private fun buildRows(
+    value: Any?,
+    depth: Int,
+    isListItem: Boolean,
+    key: String?,
+    rows: MutableList<TreeRow>,
+) {
+    val rowId = rows.size
+    when (value) {
+        is Map<*, *> -> {
+            rows.add(TreeRow(rowId, depth, key, null, value.size, isListItem, emptyList()))
+            if (value.isEmpty()) return
+            val childIds = mutableListOf<Int>()
+            value.forEach { (k, v) ->
+                childIds += rows.size
+                buildRows(v ?: "", depth + 1, false, k?.toString(), rows)
             }
+            rows[rowId] = rows[rowId].copy(childIds = childIds)
+        }
+        is List<*> -> {
+            rows.add(TreeRow(rowId, depth, key, null, value.size, isListItem, emptyList()))
+            if (value.isEmpty()) return
+            val childIds = mutableListOf<Int>()
+            value.forEach { item ->
+                childIds += rows.size
+                buildRows(item ?: "", depth + 1, true, null, rows)
+            }
+            rows[rowId] = rows[rowId].copy(childIds = childIds)
+        }
+        else -> {
+            rows.add(TreeRow(rowId, depth, key, value?.toString() ?: "null", 0, isListItem, emptyList()))
         }
     }
+}
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OutputPreviewScreen(
+    previewState: PreviewState,
+    onDismiss: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    val expanded = remember { mutableStateMapOf<Int, Boolean>() }
+    val yaml = (previewState as? PreviewState.Success)?.yaml
+    val rows = remember(yaml) { yaml?.let(::parseYamlToTree).orEmpty() }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(profile.name, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "${allNodes.size} 个节点",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        val title = (previewState as? PreviewState.Success)?.profileTitle
+                            ?: "完整配置预览"
+                        Text(title, style = MaterialTheme.typography.titleMedium)
+                        val success = previewState as? PreviewState.Success
+                        if (success != null) {
+                            Text(
+                                "${success.yaml.length} 字符 · 实时渲染",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    if (rows.isNotEmpty()) {
+                        IconButton(onClick = {
+                            rows.forEach { if (it.collapsible) expanded[it.id] = true }
+                        }) {
+                            Icon(Icons.Default.UnfoldMore, contentDescription = "全部展开")
+                        }
+                        IconButton(onClick = {
+                            rows.forEach { if (it.collapsible) expanded[it.id] = false }
+                        }) {
+                            Icon(Icons.Default.UnfoldLess, contentDescription = "全部折叠")
+                        }
+                        IconButton(onClick = {
+                            yaml?.let { clipboard.setText(AnnotatedString(it)) }
+                        }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "复制")
+                        }
                     }
                 },
                 navigationIcon = {
@@ -1295,54 +1440,179 @@ private fun OutputNodePreviewScreen(
             )
         },
     ) { padding ->
-        if (allNodes.isEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text("暂无节点", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("请确保关联订阅已刷新且有匹配节点", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                items(allNodes.size) { index ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            when (previewState) {
+                PreviewState.Idle, PreviewState.Loading -> {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(12.dp))
+                        Text("正在渲染配置...", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                is PreviewState.Error -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Icon(
-                            Icons.Default.Check,
+                            Icons.Default.CloudDownload,
                             contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(40.dp),
                         )
-                        Spacer(Modifier.width(8.dp))
                         Text(
-                            allNodes[index],
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            "渲染失败",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.error,
                         )
+                        Text(
+                            previewState.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                is PreviewState.Success -> {
+                    YamlTreeView(
+                        rows = rows,
+                        expanded = expanded,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YamlTreeView(
+    rows: List<TreeRow>,
+    expanded: SnapshotStateMap<Int, Boolean>,
+) {
+    if (rows.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("（空配置）", style = MaterialTheme.typography.bodySmall)
+        }
+        return
+    }
+
+    val visibleRows by remember(rows) {
+        derivedStateOf { computeVisibleRows(rows, expanded) }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentPadding = PaddingValues(vertical = 8.dp),
+    ) {
+        items(
+            count = visibleRows.size,
+            key = { visibleRows[it].id },
+        ) { index ->
+            TreeRowView(visibleRows[index], expanded)
+        }
+    }
+}
+
+private fun computeVisibleRows(
+    rows: List<TreeRow>,
+    expanded: Map<Int, Boolean>,
+): List<TreeRow> {
+    if (rows.isEmpty()) return emptyList()
+    val result = mutableListOf<TreeRow>()
+    fun isExpanded(row: TreeRow): Boolean {
+        if (!row.collapsible) return false
+        return expanded[row.id] ?: (row.childCount <= COLLAPSE_THRESHOLD)
+    }
+    fun walk(row: TreeRow) {
+        result.add(row)
+        if (!isExpanded(row)) return
+        row.childIds.forEach { childId -> walk(rows[childId]) }
+    }
+    val root = rows.first()
+    if (root.collapsible) {
+        root.childIds.forEach { walk(rows[it]) }
+    } else {
+        walk(root)
+    }
+    return result
+}
+
+@Composable
+private fun TreeRowView(
+    row: TreeRow,
+    expanded: SnapshotStateMap<Int, Boolean>,
+) {
+    val isOpen = row.collapsible && (expanded[row.id] ?: (row.childCount <= COLLAPSE_THRESHOLD))
+    val keyColor = MaterialTheme.colorScheme.primary
+    val valueColor = MaterialTheme.colorScheme.onSurface
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp * (row.depth + 1).coerceAtLeast(0).toFloat())
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+            ) {
+                if (row.collapsible) {
+                    expanded[row.id] = !isOpen
+                }
+            }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (row.collapsible) {
+            Icon(
+                if (isOpen) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = mutedColor,
+            )
+        } else {
+            Spacer(Modifier.width(14.dp))
+        }
+        val text = buildAnnotatedString {
+            if (row.isListItem) {
+                append("- ")
+            }
+            row.key?.let {
+                withStyle(SpanStyle(color = keyColor, fontWeight = FontWeight.SemiBold)) {
+                    append(it)
+                }
+                if (row.value != null) append(": ") else append(":")
+            }
+            if (row.collapsible) {
+                withStyle(SpanStyle(color = mutedColor)) {
+                    append(" ${row.childCount} 项")
+                }
+            } else {
+                row.value?.let {
+                    withStyle(SpanStyle(color = valueColor)) {
+                        append(it)
                     }
                 }
             }
         }
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -2903,6 +3173,7 @@ private fun overrideSummary(profile: OutputProfileEntity, overrides: List<Templa
 
 private fun overrideStateText(template: TemplateEntity): String =
     listOfNotNull(
+        if (template.type == TemplateType.JS) "JS" else "YAML",
         if (template.enabled) "启用" else "停用",
         if (template.global) "全局" else null,
     ).joinToString(" · ")

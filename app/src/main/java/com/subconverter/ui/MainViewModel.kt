@@ -7,7 +7,9 @@ import com.subconverter.core.AppContainer
 import com.subconverter.data.OutputProfileEntity
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateEntity
+import com.subconverter.data.TemplateType
 import com.subconverter.data.settings.ServerSettings
+import com.subconverter.domain.DEFAULT_OVERRIDE_JS
 import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
 import com.subconverter.domain.DnsConnectionMode
 import com.subconverter.domain.SubscriptionDnsConfig
@@ -31,11 +33,19 @@ data class MainUiState(
     val refreshingSourceIds: Set<Long> = emptySet(),
 )
 
+sealed interface PreviewState {
+    data object Idle : PreviewState
+    data object Loading : PreviewState
+    data class Success(val yaml: String, val profileTitle: String?) : PreviewState
+    data class Error(val message: String) : PreviewState
+}
+
 class MainViewModel(
     private val container: AppContainer,
 ) : ViewModel() {
     private val messages = MutableStateFlow("")
     private val refreshingIds = MutableStateFlow<Set<Long>>(emptySet())
+    val previewState = MutableStateFlow<PreviewState>(PreviewState.Idle)
 
     fun showMessage(message: String) {
         messages.value = message
@@ -43,6 +53,24 @@ class MainViewModel(
 
     fun clearMessage() {
         messages.value = ""
+    }
+
+    fun previewProfile(profileId: Long) {
+        previewState.value = PreviewState.Loading
+        viewModelScope.launch {
+            val result = runCatching { container.outputRepository.renderProfile(profileId) }
+            previewState.value = result.fold(
+                onSuccess = { rendered ->
+                    rendered?.let { PreviewState.Success(it.yamlBody, it.profileTitle) }
+                        ?: PreviewState.Error("输出不存在")
+                },
+                onFailure = { PreviewState.Error(it.message ?: "渲染失败") },
+            )
+        }
+    }
+
+    fun clearPreview() {
+        previewState.value = PreviewState.Idle
     }
 
     private val dataState = combine(
@@ -197,13 +225,14 @@ class MainViewModel(
         yamlBody: String,
         enabled: Boolean,
         global: Boolean,
+        type: String,
     ) {
         viewModelScope.launch {
             if (name.isBlank()) {
                 messages.value = "覆写名称不能为空"
                 return@launch
             }
-            container.yamlService.validateOverrideYaml(yamlBody)?.let { error ->
+            container.yamlService.validateOverride(type, yamlBody)?.let { error ->
                 messages.value = error
                 return@launch
             }
@@ -213,6 +242,7 @@ class MainViewModel(
                 yamlBody = yamlBody,
                 enabled = enabled,
                 global = global,
+                type = type,
                 updatedAt = System.currentTimeMillis(),
             )
 
@@ -246,8 +276,20 @@ class MainViewModel(
         }
     }
 
-    fun addTemplate(name: String, yamlBody: String) {
-        saveTemplate(existing = null, name = name, remoteUrl = "", yamlBody = yamlBody.ifBlank { DEFAULT_OVERRIDE_YAML.trimIndent() }, enabled = true, global = false)
+    fun addTemplate(name: String, yamlBody: String, type: String = TemplateType.YAML) {
+        val defaultBody = when (type) {
+            TemplateType.JS -> DEFAULT_OVERRIDE_JS.trimIndent()
+            else -> yamlBody.ifBlank { DEFAULT_OVERRIDE_YAML.trimIndent() }
+        }
+        saveTemplate(
+            existing = null,
+            name = name,
+            remoteUrl = "",
+            yamlBody = defaultBody,
+            enabled = true,
+            global = false,
+            type = type,
+        )
     }
 
     fun moveTemplate(templateId: Long, offset: Int) {

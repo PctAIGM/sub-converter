@@ -90,6 +90,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.yaml:snakeyaml:2.2")
+    implementation("io.github.taoweiji.quickjs:quickjs-android:1.4.6")
 
     ksp("androidx.room:room-compiler:$roomVersion")
 

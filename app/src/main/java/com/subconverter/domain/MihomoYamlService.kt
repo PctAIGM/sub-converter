@@ -1,10 +1,13 @@
 package com.subconverter.domain
 
+import com.subconverter.data.TemplateType
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import java.util.LinkedHashMap
 
-class MihomoYamlService {
+class MihomoYamlService(
+    private val jsService: JsOverrideService = JsOverrideService(),
+) {
     private val yaml = Yaml(
         DumperOptions().apply {
             defaultFlowStyle = DumperOptions.FlowStyle.BLOCK
@@ -59,39 +62,72 @@ class MihomoYamlService {
     fun renderTemplate(
         templateYaml: String,
         proxies: List<LinkedHashMap<String, Any?>>,
-        overrideYamls: List<String> = emptyList(),
+        overrides: List<OverrideEntry> = emptyList(),
     ): String {
         val root = loadMap(templateYaml).ifEmpty { LinkedHashMap() }
         val uniqueProxies = makeNamesUnique(proxies)
         val proxyNames = uniqueProxies.mapNotNull { it["name"]?.toString() }
 
         val expanded = replacePlaceholders(root, proxyNames)
-        val renderedRoot = if (expanded is MutableMap<*, *>) {
+        var renderedRoot: MutableMap<String, Any?> = if (expanded is MutableMap<*, *>) {
             @Suppress("UNCHECKED_CAST")
             expanded as MutableMap<String, Any?>
         } else {
             LinkedHashMap()
         }
         renderedRoot["proxies"] = uniqueProxies
-        overrideYamls.forEach { overrideYaml ->
-            val patch = parseOverrideMap(overrideYaml)
-            val expandedPatch = replacePlaceholders(patch, proxyNames)
-            if (expandedPatch is Map<*, *>) {
-                deepMerge(renderedRoot, expandedPatch)
+
+        overrides.forEachIndexed { index, entry ->
+            renderedRoot = when (entry.type) {
+                TemplateType.JS -> applySingleJsOverride(renderedRoot, entry.body, index + 1)
+                else -> {
+                    val patch = parseOverrideMap(entry.body)
+                    val expandedPatch = replacePlaceholders(patch, proxyNames)
+                    if (expandedPatch is Map<*, *>) {
+                        deepMerge(renderedRoot, expandedPatch)
+                    }
+                    renderedRoot
+                }
             }
         }
         return yaml.dump(renderedRoot)
     }
 
+    private fun applySingleJsOverride(
+        root: MutableMap<String, Any?>,
+        script: String,
+        ordinal: Int,
+    ): MutableMap<String, Any?> {
+        val result = runCatching { jsService.execute(script, root) }.getOrElse { cause ->
+            val reason = (cause as? JsOverrideException)?.message ?: cause.message ?: cause::class.java.simpleName
+            throw IllegalStateException("JavaScript 覆写 #$ordinal 执行失败: $reason", cause)
+        }
+        return LinkedHashMap(result)
+    }
+
     fun validateOverrideYaml(yamlBody: String): String? {
         if (yamlBody.isBlank()) return null
         return runCatching {
-            parseOverrideMap(yamlBody)
+            val map = parseOverrideMap(yamlBody)
+            map.forEach { (rawKey, value) ->
+                val key = rawKey.toString()
+                val isListSyntax = key.startsWith("+") || key.endsWith("+")
+                if (isListSyntax && value !is List<*>) {
+                    val cleanKey = key.trimStart('+').trimEnd('+').trim('<', '>')
+                    throw IllegalArgumentException("「$cleanKey」使用追加语法(+ / +)，值必须是列表，请在每项前加「- 」")
+                }
+            }
             null
         }.getOrElse { throwable ->
             throwable.message ?: "覆写 YAML 解析失败"
         }
     }
+
+    fun validateOverride(type: String, body: String): String? =
+        when (type) {
+            TemplateType.JS -> jsService.validate(body)
+            else -> validateOverrideYaml(body)
+        }
 
     private fun loadMap(yamlBody: String): LinkedHashMap<String, Any?> {
         val loaded = runCatching { yaml.load<Any?>(yamlBody) }.getOrNull()
@@ -154,15 +190,24 @@ class MihomoYamlService {
                 return@forEach
             }
 
+            val prepend = rawKey.startsWith("+")
+            val append = !prepend && rawKey.endsWith("+")
+            val cleanKey = trimWrap(
+                when {
+                    prepend -> rawKey.drop(1)
+                    append -> rawKey.dropLast(1)
+                    else -> rawKey
+                },
+            )
+
             when (patchValue) {
                 is Map<*, *> -> {
-                    val key = trimWrap(rawKey)
-                    val current = target[key]
+                    val current = target[cleanKey]
                     val targetChild = if (current is MutableMap<*, *>) {
                         @Suppress("UNCHECKED_CAST")
                         current as MutableMap<String, Any?>
                     } else {
-                        LinkedHashMap<String, Any?>().also { target[key] = it }
+                        LinkedHashMap<String, Any?>().also { target[cleanKey] = it }
                     }
                     deepMerge(targetChild, patchValue)
                 }
@@ -170,26 +215,24 @@ class MihomoYamlService {
                 is List<*> -> {
                     val patchList = patchValue.map(::copyValue)
                     when {
-                        rawKey.startsWith("+") -> {
-                            val key = trimWrap(rawKey.drop(1))
-                            val current = target[key] as? List<*> ?: emptyList<Any?>()
-                            target[key] = patchList + current.map(::copyValue)
+                        prepend -> {
+                            val current = target[cleanKey] as? List<*> ?: emptyList<Any?>()
+                            target[cleanKey] = patchList + current.map(::copyValue)
                         }
 
-                        rawKey.endsWith("+") -> {
-                            val key = trimWrap(rawKey.dropLast(1))
-                            val current = target[key] as? List<*> ?: emptyList<Any?>()
-                            target[key] = current.map(::copyValue) + patchList
+                        append -> {
+                            val current = target[cleanKey] as? List<*> ?: emptyList<Any?>()
+                            target[cleanKey] = current.map(::copyValue) + patchList
                         }
 
                         else -> {
-                            target[trimWrap(rawKey)] = patchList
+                            target[cleanKey] = patchList
                         }
                     }
                 }
 
                 else -> {
-                    target[trimWrap(rawKey)] = copyValue(patchValue)
+                    target[cleanKey] = copyValue(patchValue)
                 }
             }
         }

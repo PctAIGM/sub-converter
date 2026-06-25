@@ -101,7 +101,12 @@ class LocalHttpServer(
                         return@withContext
                     }
 
-                    val rendered = outputRepository.renderProfile(id)
+                    val rendered = try {
+                        outputRepository.renderProfile(id)
+                    } catch (e: Exception) {
+                        writeResponse(client, 500, "text/plain; charset=utf-8", e.message ?: "渲染失败")
+                        return@withContext
+                    }
                     if (rendered == null) {
                         writeResponse(client, 404, "text/plain; charset=utf-8", "Not Found")
                         return@withContext

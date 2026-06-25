@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.subconverter.data.AppDatabase
 import com.subconverter.data.settings.ServerSettingsStore
 import com.subconverter.domain.GistUploader
+import com.subconverter.domain.JsOverrideService
 import com.subconverter.domain.MihomoYamlService
 import com.subconverter.domain.NodePreResolver
 import com.subconverter.domain.OutputRepository
@@ -30,10 +31,12 @@ class AppContainer private constructor(context: Context) {
         .addMigrations(AppDatabase.Migration6To7)
         .addMigrations(AppDatabase.Migration7To8)
         .addMigrations(AppDatabase.Migration8To9)
+        .addMigrations(AppDatabase.Migration9To10)
         .build()
 
     val settingsStore = ServerSettingsStore(appContext)
-    val yamlService = MihomoYamlService()
+    val jsOverrideService = JsOverrideService()
+    val yamlService = MihomoYamlService(jsOverrideService)
     val subscriptionFetcher = SubscriptionFetcher()
     val remoteTextFetcher = RemoteTextFetcher()
     private val nodePreResolver = NodePreResolver()

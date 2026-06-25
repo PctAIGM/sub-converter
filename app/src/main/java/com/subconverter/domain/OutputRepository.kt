@@ -65,7 +65,7 @@ class OutputRepository(
 
         return runCatching {
             val body = remoteTextFetcher.fetch(template.remoteUrl)
-            yamlService.validateOverrideYaml(body)?.let { error ->
+            yamlService.validateOverride(template.type, body)?.let { error ->
                 throw IllegalArgumentException(error)
             }
             templateDao.update(
@@ -143,11 +143,11 @@ class OutputRepository(
             allOverrides.firstOrNull { it.id == id }
         }
         val usedOverrideIds = mutableSetOf<Long>()
-        val overrideYamls = buildList {
+        val orderedOverrides = buildList {
             (allOverrides.filter { it.global } + selectedOverrides).forEach { overrideItem ->
                 if (overrideItem.enabled && overrideItem.id !in usedOverrideIds) {
                     usedOverrideIds += overrideItem.id
-                    add(overrideItem.yamlBody)
+                    add(OverrideEntry(overrideItem.type, overrideItem.yamlBody))
                 }
             }
         }
@@ -155,7 +155,7 @@ class OutputRepository(
         val body = yamlService.renderTemplate(
             templateYaml = DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
             proxies = sourceProxies,
-            overrideYamls = overrideYamls,
+            overrides = orderedOverrides,
         )
 
         val profileTitle = profile.name.takeIf { it.isNotBlank() }

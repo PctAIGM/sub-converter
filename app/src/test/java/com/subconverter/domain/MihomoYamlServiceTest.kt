@@ -1,7 +1,10 @@
 package com.subconverter.domain
 
+import com.subconverter.data.TemplateType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.yaml.snakeyaml.Yaml
@@ -73,18 +76,21 @@ class MihomoYamlServiceTest {
             DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
             service.extractProxies(input),
             listOf(
-                """
-                +rules:
-                  - DOMAIN,front.example,DIRECT
-                rules+:
-                  - DOMAIN,tail.example,REJECT
-                proxy-groups!:
-                  - name: CUSTOM
-                    type: select
-                    proxies: "{{proxy_names}}"
-                dns:
-                  enable: true
-                """.trimIndent(),
+                OverrideEntry(
+                    TemplateType.YAML,
+                    """
+                    +rules:
+                      - DOMAIN,front.example,DIRECT
+                    rules+:
+                      - DOMAIN,tail.example,REJECT
+                    proxy-groups!:
+                      - name: CUSTOM
+                        type: select
+                        proxies: "{{proxy_names}}"
+                    dns:
+                      enable: true
+                    """.trimIndent(),
+                ),
             ),
         )
         val root = Yaml().load<Map<String, Any?>>(rendered)
@@ -102,6 +108,45 @@ class MihomoYamlServiceTest {
     @Test
     fun rejectsNonObjectOverrideYaml() {
         assertNotNull(service.validateOverrideYaml("- item"))
+    }
+
+    @Test
+    fun prependsAndAppendsRulesWithPlusSyntax() {
+        val input = """
+            proxies:
+              - name: HK 01
+                type: ss
+        """.trimIndent()
+
+        val rendered = service.renderTemplate(
+            DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
+            service.extractProxies(input),
+            overrides = listOf(
+                OverrideEntry(
+                    TemplateType.YAML,
+                    """
+                    +rules:
+                      - DOMAIN,prepend.example,DIRECT
+                    rules+:
+                      - DOMAIN,append.example,REJECT
+                    """.trimIndent(),
+                ),
+            ),
+        )
+        val root = Yaml().load<Map<String, Any?>>(rendered)
+        val rules = root["rules"] as List<*>
+
+        assertEquals("DOMAIN,prepend.example,DIRECT", rules.first())
+        assertEquals("DOMAIN,append.example,REJECT", rules.last())
+        assertFalse(rules.any { it.toString().startsWith("+") || it.toString().endsWith("+") })
+    }
+
+    @Test
+    fun plusSyntaxScalarValueIsRejectedAsValidationError() {
+        val badOverride = "+rules:\n  DOMAIN-SUFFIX,jd.com,DIRECT"
+        val error = service.validateOverride(TemplateType.YAML, badOverride)
+        assertNotNull(error)
+        assertTrue(error!!.contains("列表"))
     }
 
     @Test
@@ -144,5 +189,32 @@ class MihomoYamlServiceTest {
         val wsOptions = replaced.single()["ws-opts"] as Map<*, *>
         val headers = wsOptions["headers"] as Map<*, *>
         assertEquals("ws.example.com", headers["Host"])
+    }
+
+    @Test
+    fun rendersWithoutJavaScriptOverridesWhenListEmpty() {
+        val input = """
+            proxies:
+              - name: HK 01
+                type: ss
+        """.trimIndent()
+
+        val rendered = service.renderTemplate(
+            DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
+            service.extractProxies(input),
+            overrides = listOf(OverrideEntry(TemplateType.YAML, "rules+:\n  - DOMAIN,a.example,DIRECT")),
+        )
+        val root = Yaml().load<Map<String, Any?>>(rendered)
+        val rules = root["rules"] as List<*>
+
+        assertEquals("DOMAIN,a.example,DIRECT", rules.last())
+    }
+
+    @Test
+    fun validateOverrideDispatchesByType() {
+        // YAML 分支可在 JVM 单元测试下验证；JS 分支依赖原生 QuickJS 引擎，
+        // 需在 androidTest（设备/模拟器）下覆盖，此处不调用。
+        assertNull(service.validateOverride("YAML", "rules+: []"))
+        assertNotNull(service.validateOverride("YAML", "- not-an-object"))
     }
 }

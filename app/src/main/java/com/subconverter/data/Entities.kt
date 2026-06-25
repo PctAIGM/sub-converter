@@ -66,10 +66,16 @@ data class TemplateEntity(
     val enabled: Boolean = true,
     val global: Boolean = false,
     val sortOrder: Int = 0,
+    val type: String = TemplateType.YAML,
     val lastRefreshAt: Long? = null,
     val lastError: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
 )
+
+object TemplateType {
+    const val YAML = "YAML"
+    const val JS = "JS"
+}
 
 @Entity(tableName = "output_profiles")
 data class OutputProfileEntity(

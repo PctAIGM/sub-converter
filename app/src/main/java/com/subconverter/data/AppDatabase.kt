@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TemplateEntity::class,
         OutputProfileEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -107,6 +107,12 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE output_profiles ADD COLUMN uploadToGist INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE output_profiles ADD COLUMN gistId TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val Migration9To10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE templates ADD COLUMN type TEXT NOT NULL DEFAULT 'YAML'")
             }
         }
     }

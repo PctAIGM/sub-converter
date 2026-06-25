@@ -8,3 +8,6 @@
 -dontwarn com.google.zxing.**
 -keep class com.google.zxing.qrcode.QRCodeWriter { *; }
 -keep class com.google.zxing.MultiFormatReader { *; }
+
+-dontwarn com.quickjs.**
+-keep class com.quickjs.** { *; }

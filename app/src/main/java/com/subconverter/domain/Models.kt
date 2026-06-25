@@ -34,6 +34,11 @@ data class TransformRules(
     val excludeRegex: String = "",
 )
 
+data class OverrideEntry(
+    val type: String,
+    val body: String,
+)
+
 data class FetchResult(
     val yamlBody: String,
     val statusCode: Int,
