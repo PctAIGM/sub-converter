@@ -1,5 +1,6 @@
 package com.subconverter.server
 
+import android.content.res.AssetManager
 import com.subconverter.data.settings.ServerSettings
 import com.subconverter.domain.OutputRepository
 import kotlinx.coroutines.CoroutineScope
@@ -19,9 +20,11 @@ import java.net.Socket
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 class LocalHttpServer(
     private val outputRepository: OutputRepository,
+    private val assetManager: AssetManager? = null,
 ) {
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var serverSocket: ServerSocket? = null
@@ -76,6 +79,31 @@ class LocalHttpServer(
             }
 
             when {
+                uri.path == "/zashboard" -> {
+                    writeResponse(
+                        client,
+                        302,
+                        "text/plain; charset=utf-8",
+                        "",
+                        mapOf("Location" to "/zashboard/"),
+                    )
+                }
+
+                uri.path.startsWith("/zashboard/") -> {
+                    val response = zashboardAssetResponse(uri.path)
+                    if (response == null) {
+                        writeResponse(client, 404, "text/plain; charset=utf-8", "Not Found")
+                    } else {
+                        writeResponse(
+                            client,
+                            200,
+                            response.contentType,
+                            response.body,
+                            response.headers,
+                        )
+                    }
+                }
+
                 uri.path == "/health" -> {
                     writeResponse(
                         client,
@@ -129,6 +157,32 @@ class LocalHttpServer(
         }
     }
 
+    private fun zashboardAssetResponse(path: String): StaticAssetResponse? {
+        val assets = assetManager ?: return null
+        val assetPath = ZashboardAssets.resolve(path) ?: return null
+        var responseAssetPath = assetPath
+        val body = openAsset(assets, assetPath) ?: run {
+            if (!ZashboardAssets.shouldFallbackToIndex(assetPath)) return null
+            responseAssetPath = ZashboardAssets.INDEX_ASSET_PATH
+            openAsset(assets, responseAssetPath) ?: return null
+        }
+        val cacheControl = if (responseAssetPath == ZashboardAssets.INDEX_ASSET_PATH) {
+            "no-cache"
+        } else {
+            "public, max-age=31536000, immutable"
+        }
+        return StaticAssetResponse(
+            contentType = ZashboardAssets.contentType(responseAssetPath),
+            body = body,
+            headers = mapOf("Cache-Control" to cacheControl),
+        )
+    }
+
+    private fun openAsset(assets: AssetManager, assetPath: String): ByteArray? =
+        runCatching {
+            assets.open(assetPath).use { it.readBytes() }
+        }.getOrNull()
+
     private fun isTokenAllowed(uri: URI): Boolean {
         val requiredToken = activeSettings.token
         if (requiredToken.isBlank()) return true
@@ -154,25 +208,77 @@ class LocalHttpServer(
         body: String,
         extraHeaders: Map<String, String> = emptyMap(),
     ) {
+        writeResponse(socket, status, contentType, body.toByteArray(StandardCharsets.UTF_8), extraHeaders)
+    }
+
+    private fun writeResponse(
+        socket: Socket,
+        status: Int,
+        contentType: String,
+        body: ByteArray,
+        extraHeaders: Map<String, String> = emptyMap(),
+    ) {
         val reason = when (status) {
             200 -> "OK"
+            302 -> "Found"
             400 -> "Bad Request"
             401 -> "Unauthorized"
             404 -> "Not Found"
             else -> "Error"
         }
-        val bytes = body.toByteArray(StandardCharsets.UTF_8)
         val output = socket.getOutputStream()
         val headers = buildString {
             append("HTTP/1.1 $status $reason\r\n")
             append("Content-Type: $contentType\r\n")
-            append("Content-Length: ${bytes.size}\r\n")
+            append("Content-Length: ${body.size}\r\n")
             append("Connection: close\r\n")
             extraHeaders.forEach { (name, value) -> append("$name: $value\r\n") }
             append("\r\n")
         }
         output.write(headers.toByteArray(StandardCharsets.UTF_8))
-        output.write(bytes)
+        output.write(body)
         output.flush()
+    }
+
+    private data class StaticAssetResponse(
+        val contentType: String,
+        val body: ByteArray,
+        val headers: Map<String, String>,
+    )
+}
+
+object ZashboardAssets {
+    const val INDEX_ASSET_PATH = "zashboard/index.html"
+    private const val PREFIX = "/zashboard/"
+    private const val ASSET_ROOT = "zashboard"
+
+    fun resolve(path: String): String? {
+        if (!path.startsWith(PREFIX)) return null
+        val relativePath = path.removePrefix(PREFIX).ifBlank { "index.html" }
+        if (relativePath.contains("..") || relativePath.contains('\\')) return null
+        return "$ASSET_ROOT/$relativePath"
+    }
+
+    fun shouldFallbackToIndex(assetPath: String): Boolean {
+        val fileName = assetPath.substringAfterLast('/')
+        return '.' !in fileName
+    }
+
+    fun contentType(assetPath: String): String {
+        return when (assetPath.substringAfterLast('.', "").lowercase(Locale.US)) {
+            "html" -> "text/html; charset=utf-8"
+            "css" -> "text/css; charset=utf-8"
+            "js" -> "application/javascript; charset=utf-8"
+            "json" -> "application/json; charset=utf-8"
+            "webmanifest" -> "application/manifest+json; charset=utf-8"
+            "svg" -> "image/svg+xml"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "ico" -> "image/x-icon"
+            "woff" -> "font/woff"
+            "woff2" -> "font/woff2"
+            "ttf" -> "font/ttf"
+            else -> "application/octet-stream"
+        }
     }
 }

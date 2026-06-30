@@ -64,7 +64,7 @@ class AppContainer private constructor(context: Context) {
         outputRepository = outputRepository,
     )
 
-    val localHttpServer = LocalHttpServer(outputRepository)
+    val localHttpServer = LocalHttpServer(outputRepository, appContext.assets)
 
     companion object {
         @Volatile

@@ -102,6 +102,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -293,6 +294,11 @@ fun MainScreen(viewModel: MainViewModel) {
                 running = state.serverRunning,
                 onSave = viewModel::updateServerSettings,
                 onAutoStartOnBootChange = viewModel::updateAutoStartOnBoot,
+                onCopied = { viewModel.showMessage("zashboard 地址已复制") },
+                onQrShare = {
+                    sharingUrl = it
+                    editScreen = EditScreen.QrShare
+                },
                 modifier = Modifier.padding(padding),
             )
         }
@@ -2461,8 +2467,12 @@ private fun ServerScreen(
     running: Boolean,
     onSave: (ServerSettings) -> Unit,
     onAutoStartOnBootChange: (Boolean) -> Unit,
+    onCopied: () -> Unit,
+    onQrShare: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
     var port by rememberSaveable(settings.port) { mutableStateOf(settings.port.toString()) }
     var token by rememberSaveable(settings.token) { mutableStateOf(settings.token) }
     var allowLan by rememberSaveable(settings.allowLan) { mutableStateOf(settings.allowLan) }
@@ -2507,6 +2517,20 @@ private fun ServerScreen(
                         ),
                     )
                 },
+            )
+        }
+
+        item {
+            val zashboardUrl = zashboardUrl(previewSettings, lanAddress)
+            ZashboardCard(
+                url = zashboardUrl,
+                running = running,
+                onOpen = { uriHandler.openUri(zashboardUrl) },
+                onCopy = {
+                    clipboard.setText(AnnotatedString(zashboardUrl))
+                    onCopied()
+                },
+                onQrShare = { onQrShare(zashboardUrl) },
             )
         }
 
@@ -2641,6 +2665,100 @@ private fun ServerScreen(
                 ),
             ) {
                 Text("保存配置", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZashboardCard(
+    url: String,
+    running: Boolean,
+    onOpen: () -> Unit,
+    onCopy: () -> Unit,
+    onQrShare: () -> Unit,
+) {
+    iOSGroupedCard {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                iOSTintedIcon(Icons.Default.Insights, MaterialTheme.colorScheme.tertiary)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "zashboard",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        if (running) "静态面板已随 HTTP 服务开放" else "启动本地 HTTP 服务后可访问",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f))
+                    .clickable(onClick = onCopy)
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(12.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        url,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onOpen,
+                    enabled = running,
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("打开", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = onCopy,
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("复制", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = onQrShare,
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("二维码", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
@@ -3196,6 +3314,11 @@ private fun subscriptionUrl(settings: ServerSettings, profileId: Long, lanAddres
     val host = if (settings.allowLan) lanAddress ?: "PHONE_IP" else "127.0.0.1"
     val token = settings.token.takeIf { it.isNotBlank() }?.let { "?token=$it" }.orEmpty()
     return "http://$host:${settings.port}/subscriptions/$profileId.yaml$token"
+}
+
+private fun zashboardUrl(settings: ServerSettings, lanAddress: String?): String {
+    val host = if (settings.allowLan) lanAddress ?: "PHONE_IP" else "127.0.0.1"
+    return "http://$host:${settings.port}/zashboard/"
 }
 
 private fun localLanAddress(): String? =
