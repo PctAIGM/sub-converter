@@ -188,6 +188,8 @@ fun MainScreen(viewModel: MainViewModel) {
                     when (selectedTab) {
                         MainTab.Sources -> {
                             IconButton(onClick = {
+                                editingSource = null
+                                scannedUrl = ""
                                 editScreen = EditScreen.Scan
                             }) {
                                 Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码添加")
@@ -199,6 +201,7 @@ fun MainScreen(viewModel: MainViewModel) {
                             }
                             IconButton(onClick = {
                                 editingSource = null
+                                scannedUrl = ""
                                 editScreen = EditScreen.Source
                             }) {
                                 Icon(Icons.Default.Add, contentDescription = "添加订阅")
@@ -243,6 +246,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 refreshingSourceIds = state.refreshingSourceIds,
                 onRefresh = viewModel::refreshSource,
                 onEdit = {
+                    scannedUrl = ""
                     editingSource = it
                     editScreen = EditScreen.Source
                 },
@@ -374,6 +378,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
         EditScreen.Scan -> QrScanScreen(
             onScanned = { url ->
+                editingSource = null
                 scannedUrl = url
                 editScreen = EditScreen.Source
             },
@@ -446,23 +451,24 @@ private fun SourceEditScreen(
         SubscriptionDnsConfig,
     ) -> Unit,
 ) {
-    var name by rememberSaveable(source?.id) { mutableStateOf(source?.name.orEmpty()) }
-    var url by rememberSaveable(source?.id) { mutableStateOf(source?.url.orEmpty().ifBlank { initialUrl }) }
-    var userAgent by rememberSaveable(source?.id) { mutableStateOf(source?.userAgent.orEmpty()) }
-    var prefix by rememberSaveable(source?.id) { mutableStateOf(source?.prefix.orEmpty()) }
-    var include by rememberSaveable(source?.id) { mutableStateOf(source?.includeRegex.orEmpty()) }
-    var exclude by rememberSaveable(source?.id) { mutableStateOf(source?.excludeRegex.orEmpty()) }
-    var auto by rememberSaveable(source?.id) { mutableStateOf(source?.autoRefreshEnabled ?: false) }
-    var interval by rememberSaveable(source?.id) { mutableStateOf((source?.refreshIntervalMinutes ?: 720).toString()) }
-    var dnsProtocol by rememberSaveable(source?.id) { mutableStateOf(source?.dnsProtocol.orEmpty()) }
-    var dnsServer by rememberSaveable(source?.id) { mutableStateOf(source?.dnsServer.orEmpty()) }
-    var dnsConnectionMode by rememberSaveable(source?.id) {
+    val sourceFormKey = source?.id?.toString() ?: "new:$initialUrl"
+    var name by rememberSaveable(sourceFormKey) { mutableStateOf(source?.name.orEmpty()) }
+    var url by rememberSaveable(sourceFormKey) { mutableStateOf(source?.url.orEmpty().ifBlank { initialUrl }) }
+    var userAgent by rememberSaveable(sourceFormKey) { mutableStateOf(source?.userAgent.orEmpty()) }
+    var prefix by rememberSaveable(sourceFormKey) { mutableStateOf(source?.prefix.orEmpty()) }
+    var include by rememberSaveable(sourceFormKey) { mutableStateOf(source?.includeRegex.orEmpty()) }
+    var exclude by rememberSaveable(sourceFormKey) { mutableStateOf(source?.excludeRegex.orEmpty()) }
+    var auto by rememberSaveable(sourceFormKey) { mutableStateOf(source?.autoRefreshEnabled ?: false) }
+    var interval by rememberSaveable(sourceFormKey) { mutableStateOf((source?.refreshIntervalMinutes ?: 720).toString()) }
+    var dnsProtocol by rememberSaveable(sourceFormKey) { mutableStateOf(source?.dnsProtocol.orEmpty()) }
+    var dnsServer by rememberSaveable(sourceFormKey) { mutableStateOf(source?.dnsServer.orEmpty()) }
+    var dnsConnectionMode by rememberSaveable(sourceFormKey) {
         mutableStateOf(source?.dnsConnectionMode ?: DnsConnectionMode.PRESERVE_DOMAIN.name)
     }
-    var allowHostnameMismatch by rememberSaveable(source?.id) {
+    var allowHostnameMismatch by rememberSaveable(sourceFormKey) {
         mutableStateOf(source?.allowHostnameMismatch ?: false)
     }
-    var preResolveNodes by rememberSaveable(source?.id) {
+    var preResolveNodes by rememberSaveable(sourceFormKey) {
         mutableStateOf(source?.preResolveNodes ?: false)
     }
 
