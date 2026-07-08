@@ -2,7 +2,9 @@ package com.subconverter.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,14 +18,24 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imeNestedScroll
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
@@ -62,6 +74,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -96,20 +109,28 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -117,6 +138,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subconverter.data.OutputProfileEntity
@@ -405,6 +427,7 @@ private fun EditScreenScaffold(
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.titleMedium) },
@@ -430,7 +453,7 @@ private fun EditScreenScaffold(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SourceEditScreen(
     source: SubscriptionSourceEntity?,
@@ -525,6 +548,8 @@ private fun SourceEditScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
+                .imeNestedScroll()
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -689,7 +714,7 @@ private fun SourceEditScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun TemplateEditScreen(
     template: TemplateEntity?,
@@ -701,6 +726,7 @@ private fun TemplateEditScreen(
     var enabled by rememberSaveable(template?.id) { mutableStateOf(template?.enabled ?: true) }
     var global by rememberSaveable(template?.id) { mutableStateOf(template?.global ?: false) }
     var type by rememberSaveable(template?.id) { mutableStateOf(template?.type ?: TemplateType.YAML) }
+    var editorFullScreen by rememberSaveable(template?.id) { mutableStateOf(false) }
     var body by rememberSaveable(template?.id) {
         mutableStateOf(
             template?.yamlBody ?: DEFAULT_OVERRIDE_YAML.trimIndent(),
@@ -710,6 +736,16 @@ private fun TemplateEditScreen(
     fun defaultBodyFor(type: String) = when (type) {
         TemplateType.JS -> DEFAULT_OVERRIDE_JS.trimIndent()
         else -> DEFAULT_OVERRIDE_YAML.trimIndent()
+    }
+
+    if (editorFullScreen) {
+        FullScreenCodeEditor(
+            value = body,
+            onValueChange = { body = it },
+            type = type,
+            onClose = { editorFullScreen = false },
+        )
+        return
     }
 
     EditScreenScaffold(
@@ -722,6 +758,8 @@ private fun TemplateEditScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
+                .imeNestedScroll()
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -752,15 +790,6 @@ private fun TemplateEditScreen(
                                 }
                             }
                         }
-                        Text(
-                            if (type == TemplateType.JS) {
-                                "JavaScript 入口为 main(config)，返回修改后的对象；在所有 YAML 覆写之后执行"
-                            } else {
-                                "YAML 覆写，按 deep-merge 语法合并到配置"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                     FieldDivider()
                     SmallFormField("名称", name, { name = it }, "覆写名称")
@@ -773,35 +802,745 @@ private fun TemplateEditScreen(
                 }
             }
             item {
-                OutlinedTextField(
+                CodeEditorField(
                     value = body,
                     onValueChange = { body = it },
-                    label = {
-                        Text(
-                            if (type == TemplateType.JS) "脚本内容" else "YAML 内容",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    },
-                    minLines = 12,
-                    maxLines = 30,
+                    type = type,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                    ),
+                    onRequestFullScreen = { editorFullScreen = true },
                 )
             }
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun FullScreenCodeEditor(
+    value: String,
+    onValueChange: (String) -> Unit,
+    type: String,
+    onClose: () -> Unit,
+) {
+    androidx.activity.compose.BackHandler(onBack = onClose)
+    val title = if (type == TemplateType.JS) "JavaScript" else "YAML"
+    val lineCount = remember(value) { value.count { it == '\n' } + 1 }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "$title · $lineCount 行",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        TextButton(
+                            onClick = onClose,
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                        ) {
+                            Text("完成", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+        },
+    ) { padding ->
+        CodeEditorField(
+            value = value,
+            onValueChange = onValueChange,
+            type = type,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .imePadding()
+                .imeNestedScroll(),
+            fullScreen = true,
+            showHeader = false,
+        )
+    }
+}
+
+@Composable
+private fun CodeEditorField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    type: String,
+    modifier: Modifier = Modifier,
+    fullScreen: Boolean = false,
+    showHeader: Boolean = true,
+    onRequestFullScreen: (() -> Unit)? = null,
+) {
+    var editor by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    var revealCursorRequest by remember { mutableStateOf(0) }
+    LaunchedEffect(value) {
+        if (value != editor.text) {
+            val cursor = editor.selection.start.coerceIn(0, value.length)
+            editor = TextFieldValue(value, TextRange(cursor))
+        }
+    }
+
+    fun applyEditor(next: TextFieldValue) {
+        val textChanged = next.text != editor.text
+        editor = next
+        onValueChange(next.text)
+        if (textChanged) {
+            revealCursorRequest += 1
+        }
+    }
+
+    val density = LocalDensity.current
+    var yamlCompletionOffsetY by remember { mutableStateOf(0.dp) }
+    var cursorRect by remember { mutableStateOf<Rect?>(null) }
+    var editorViewportHeight by remember { mutableStateOf(0) }
+    val verticalScroll = rememberScrollState()
+    val horizontalScroll = rememberScrollState()
+    val lineCount = remember(editor.text) { editor.text.count { it == '\n' } + 1 }
+    val yamlCompletionState = remember(type, editor.text, editor.selection) {
+        yamlCompletionState(type, editor)
+    }
+    val validation = remember(type, editor.text) {
+        editorValidation(type, editor.text)
+    }
+    val syntaxPalette = CodeSyntaxPalette(
+        key = MaterialTheme.colorScheme.primary,
+        keyword = MaterialTheme.colorScheme.tertiary,
+        string = MaterialTheme.colorScheme.secondary,
+        number = MaterialTheme.colorScheme.error,
+        comment = MaterialTheme.colorScheme.onSurfaceVariant,
+        punctuation = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    val title = if (type == TemplateType.JS) "JavaScript" else "YAML"
+    val lineNumberWidth = when {
+        lineCount < 100 -> 30.dp
+        lineCount < 1000 -> 36.dp
+        lineCount < 10000 -> 42.dp
+        else -> 48.dp
+    }
+    val yamlCompletionHeight = (yamlCompletionState.suggestions.size.coerceAtMost(6) * 32 + 8).dp
+    val yamlCompletionY = if (yamlCompletionOffsetY + yamlCompletionHeight > 400.dp) {
+        (yamlCompletionOffsetY - yamlCompletionHeight - 20.dp).coerceAtLeast(8.dp)
+    } else {
+        yamlCompletionOffsetY
+    }
+    LaunchedEffect(revealCursorRequest) {
+        if (revealCursorRequest == 0) return@LaunchedEffect
+        delay(40)
+        val rect = cursorRect ?: return@LaunchedEffect
+        if (editorViewportHeight <= 0) return@LaunchedEffect
+        val textTopPadding = with(density) { 12.dp.toPx() }
+        val cursorTop = rect.top + textTopPadding
+        val cursorBottom = rect.bottom + textTopPadding
+        val topPadding = with(density) { 32.dp.toPx() }
+        val bottomPadding = with(density) { 96.dp.toPx() }
+        val visibleTop = verticalScroll.value.toFloat()
+        val visibleBottom = visibleTop + editorViewportHeight
+        val target = when {
+            cursorBottom + bottomPadding > visibleBottom ->
+                cursorBottom + bottomPadding - editorViewportHeight
+            cursorTop - topPadding < visibleTop ->
+                cursorTop - topPadding
+            else -> null
+        }
+        if (target != null) {
+            verticalScroll.scrollTo(target.toInt().coerceIn(0, verticalScroll.maxValue))
+        }
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = if (fullScreen) RoundedCornerShape(0.dp) else RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+        border = if (fullScreen) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(if (fullScreen) Modifier.fillMaxSize() else Modifier) {
+            if (showHeader) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .padding(start = 10.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${lineCount} 行",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (onRequestFullScreen != null) {
+                            TextButton(
+                                onClick = onRequestFullScreen,
+                                modifier = Modifier.height(34.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp),
+                            ) {
+                                Text("全屏", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+            }
+            val editorAreaModifier = if (fullScreen) {
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .height(420.dp)
+            }
+            Box(
+                modifier = editorAreaModifier
+                    .onSizeChanged { editorViewportHeight = it.height }
+                    .verticalScroll(verticalScroll),
+            ) {
+                Row(Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .width(lineNumberWidth)
+                            .padding(top = 12.dp, end = 5.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        repeat(lineCount) { index ->
+                            Text(
+                                (index + 1).toString(),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Right,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    lineHeight = 17.sp,
+                                ),
+                            )
+                        }
+                    }
+                    BasicTextField(
+                        value = editor,
+                        onValueChange = { next -> applyEditor(autoIndent(editor, next, type)) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(horizontalScroll)
+                            .padding(12.dp),
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                        visualTransformation = CodeSyntaxVisualTransformation(type, syntaxPalette),
+                        onTextLayout = { layoutResult ->
+                            val cursor = editor.selection.start.coerceIn(0, editor.text.length)
+                            val nextCursorRect = layoutResult.getCursorRect(cursor)
+                            if (nextCursorRect != cursorRect) {
+                                cursorRect = nextCursorRect
+                            }
+                            if (type == TemplateType.YAML) {
+                                val nextOffset = with(density) { nextCursorRect.bottom.toDp() + 16.dp }
+                                if (nextOffset != yamlCompletionOffsetY) {
+                                    yamlCompletionOffsetY = nextOffset
+                                }
+                            }
+                        },
+                    )
+                }
+                if (yamlCompletionState.suggestions.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier
+                            .offset(x = lineNumberWidth + 12.dp, y = yamlCompletionY)
+                            .widthIn(min = 240.dp, max = 288.dp)
+                            .zIndex(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shadowElevation = 4.dp,
+                    ) {
+                        Column(
+                            Modifier
+                                .heightIn(max = 220.dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(vertical = 4.dp),
+                        ) {
+                            yamlCompletionState.suggestions.forEach { completion ->
+                                Text(
+                                    completion.label,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            applyEditor(editor.applyYamlCompletion(yamlCompletionState, completion))
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (type == TemplateType.YAML) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    if (validation.isNotBlank()) {
+                        Text(
+                            validation,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (validation.startsWith("YAML 语法可能有误")) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class CodeSyntaxPalette(
+    val key: Color,
+    val keyword: Color,
+    val string: Color,
+    val number: Color,
+    val comment: Color,
+    val punctuation: Color,
+)
+
+private data class YamlCompletion(
+    val label: String,
+    val insertText: String = "$label,",
+)
+
+private data class YamlCompletionState(
+    val tokenStart: Int = 0,
+    val tokenEnd: Int = 0,
+    val suggestions: List<YamlCompletion> = emptyList(),
+)
+
+private val RuleTypeCompletions = listOf(
+    "DOMAIN",
+    "DOMAIN-SUFFIX",
+    "DOMAIN-KEYWORD",
+    "DOMAIN-WILDCARD",
+    "DOMAIN-REGEX",
+    "GEOSITE",
+    "GEOIP",
+    "IP-CIDR",
+    "IP-CIDR6",
+    "IP-SUFFIX",
+    "IP-ASN",
+    "SRC-GEOIP",
+    "SRC-IP-ASN",
+    "SRC-IP-CIDR",
+    "SRC-IP-SUFFIX",
+    "DST-PORT",
+    "SRC-PORT",
+    "IN-PORT",
+    "IN-TYPE",
+    "IN-USER",
+    "IN-NAME",
+    "PROCESS-PATH",
+    "PROCESS-PATH-WILDCARD",
+    "PROCESS-PATH-REGEX",
+    "PROCESS-NAME",
+    "PROCESS-NAME-WILDCARD",
+    "PROCESS-NAME-REGEX",
+    "RULE-SET",
+    "AND",
+    "OR",
+    "NOT",
+    "SUB-RULE",
+    "MATCH",
+    "NETWORK",
+    "UID",
+    "DSCP",
+).map { YamlCompletion(it) }
+
+private val YamlBlockFieldCompletions = mapOf(
+    "proxies" to listOf(
+        "name",
+        "type",
+        "server",
+        "port",
+        "ip-version",
+        "udp",
+        "interface-name",
+        "routing-mark",
+        "tfo",
+        "mptcp",
+        "dialer-proxy",
+        "servername",
+        "alpn",
+        "skip-cert-verify",
+        "smux",
+        "client-fingerprint",
+        "network",
+        "ws-opts",
+        "grpc-opts",
+        "reality-opts",
+        "packet-addr",
+        "udp-over-tcp",
+        "headers",
+        "cipher",
+        "password",
+        "uuid",
+        "alterId",
+        "flow",
+        "plugin",
+        "plugin-opts",
+    ),
+    "proxy-groups" to listOf(
+        "name",
+        "type",
+        "proxies",
+        "use",
+        "url",
+        "interval",
+        "tolerance",
+        "lazy",
+        "filter",
+        "exclude-filter",
+        "include-all",
+        "exclude-type",
+        "expected-status",
+        "disable-udp",
+        "hidden",
+        "icon",
+    ),
+    "proxy-providers" to listOf(
+        "type",
+        "url",
+        "path",
+        "interval",
+        "filter",
+        "exclude-filter",
+        "health-check",
+        "override",
+        "header",
+    ),
+    "rule-providers" to listOf(
+        "type",
+        "behavior",
+        "format",
+        "url",
+        "path",
+        "interval",
+        "payload",
+    ),
+    "dns" to listOf(
+        "enable",
+        "listen",
+        "ipv6",
+        "enhanced-mode",
+        "fake-ip-range",
+        "default-nameserver",
+        "nameserver",
+        "proxy-server-nameserver",
+        "direct-nameserver",
+        "fallback",
+        "fallback-filter",
+        "nameserver-policy",
+        "fake-ip-filter",
+        "use-hosts",
+        "respect-rules",
+    ),
+    "tun" to listOf(
+        "enable",
+        "stack",
+        "device",
+        "auto-route",
+        "auto-detect-interface",
+        "strict-route",
+        "dns-hijack",
+        "mtu",
+    ),
+    "sniffer" to listOf(
+        "enable",
+        "override-destination",
+        "force-dns-mapping",
+        "parse-pure-ip",
+        "sniff",
+        "force-domain",
+        "skip-domain",
+    ),
+).mapValues { (_, fields) -> fields.distinct().map { YamlCompletion(it, "$it: ") } }
+
+private class CodeSyntaxVisualTransformation(
+    private val type: String,
+    private val palette: CodeSyntaxPalette,
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText =
+        TransformedText(highlightCode(text.text, type, palette), OffsetMapping.Identity)
+}
+
+private fun highlightCode(text: String, type: String, palette: CodeSyntaxPalette): AnnotatedString =
+    buildAnnotatedString {
+        text.lineSequence().forEachIndexed { index, line ->
+            if (index > 0) append('\n')
+            if (type == TemplateType.JS) {
+                appendJsLine(line, palette)
+            } else {
+                appendYamlLine(line, palette)
+            }
+        }
+    }
+
+private fun AnnotatedString.Builder.appendYamlLine(line: String, palette: CodeSyntaxPalette) {
+    val commentIndex = line.indexOfCodeComment()
+    val code = if (commentIndex >= 0) line.substring(0, commentIndex) else line
+    val comment = if (commentIndex >= 0) line.substring(commentIndex) else ""
+    val keyMatch = Regex("""^(\s*-\s*|\s*)(\+?[A-Za-z0-9_.-]+[+!]?)(\s*:)""").find(code)
+    if (keyMatch != null) {
+        append(keyMatch.groupValues[1])
+        withStyle(SpanStyle(color = palette.key, fontWeight = FontWeight.SemiBold)) {
+            append(keyMatch.groupValues[2])
+        }
+        withStyle(SpanStyle(color = palette.punctuation)) {
+            append(keyMatch.groupValues[3])
+        }
+        appendValueSegments(code.substring(keyMatch.range.last + 1), palette, jsMode = false)
+    } else {
+        appendValueSegments(code, palette, jsMode = false)
+    }
+    if (comment.isNotEmpty()) {
+        withStyle(SpanStyle(color = palette.comment)) {
+            append(comment)
+        }
+    }
+}
+
+private fun AnnotatedString.Builder.appendJsLine(line: String, palette: CodeSyntaxPalette) {
+    val commentIndex = line.indexOfJsComment()
+    val code = if (commentIndex >= 0) line.substring(0, commentIndex) else line
+    val comment = if (commentIndex >= 0) line.substring(commentIndex) else ""
+    appendValueSegments(code, palette, jsMode = true)
+    if (comment.isNotEmpty()) {
+        withStyle(SpanStyle(color = palette.comment)) {
+            append(comment)
+        }
+    }
+}
+
+private fun AnnotatedString.Builder.appendValueSegments(
+    code: String,
+    palette: CodeSyntaxPalette,
+    jsMode: Boolean,
+) {
+    val regex = if (jsMode) JsSyntaxRegex else YamlValueRegex
+    var last = 0
+    regex.findAll(code).forEach { match ->
+        if (match.range.first > last) append(code.substring(last, match.range.first))
+        val token = match.value
+        val color = when {
+            token.firstOrNull() == '"' || token.firstOrNull() == '\'' || token.firstOrNull() == '`' -> palette.string
+            token in setOf("{", "}", "[", "]", "(", ")", ",", ":") -> palette.punctuation
+            token.equals("true", true) || token.equals("false", true) || token.equals("null", true) ||
+                token.equals("yes", true) || token.equals("no", true) || token.equals("on", true) ||
+                token.equals("off", true) || token == "undefined" -> palette.keyword
+            token.firstOrNull()?.isDigit() == true || token.startsWith("-") -> palette.number
+            else -> palette.keyword
+        }
+        withStyle(SpanStyle(color = color)) {
+            append(token)
+        }
+        last = match.range.last + 1
+    }
+    if (last < code.length) append(code.substring(last))
+}
+
+private val YamlValueRegex = Regex(
+    """"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b(?:true|false|null|yes|no|on|off)\b|-?\b\d+(?:\.\d+)?\b|[{}\[\],:]""",
+    RegexOption.IGNORE_CASE,
+)
+
+private val JsSyntaxRegex = Regex(
+    """`(?:\\.|[^`])*`|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b(?:function|return|const|let|var|if|else|for|of|in|while|switch|case|break|continue|true|false|null|undefined|new)\b|-?\b\d+(?:\.\d+)?\b|[{}\[\](),:]""",
+)
+
+private fun String.indexOfCodeComment(): Int {
+    var quote: Char? = null
+    forEachIndexed { index, char ->
+        if (quote != null) {
+            if (char == quote && getOrNull(index - 1) != '\\') quote = null
+            return@forEachIndexed
+        }
+        if (char == '"' || char == '\'') {
+            quote = char
+        } else if (char == '#') {
+            return index
+        }
+    }
+    return -1
+}
+
+private fun String.indexOfJsComment(): Int {
+    var quote: Char? = null
+    forEachIndexed { index, char ->
+        if (quote != null) {
+            if (char == quote && getOrNull(index - 1) != '\\') quote = null
+            return@forEachIndexed
+        }
+        if (char == '"' || char == '\'' || char == '`') {
+            quote = char
+        } else if (char == '/' && getOrNull(index + 1) == '/') {
+            return index
+        }
+    }
+    return -1
+}
+
+private fun editorValidation(type: String, text: String): String {
+    if (text.isBlank()) return ""
+    if (type != TemplateType.YAML) return ""
+    return runCatching {
+        org.yaml.snakeyaml.Yaml().load<Any?>(text)
+    }.fold(
+        onSuccess = { "" },
+        onFailure = { "YAML 语法可能有误：${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}" },
+    )
+}
+
+private fun yamlCompletionState(type: String, editor: TextFieldValue): YamlCompletionState {
+    if (type != TemplateType.YAML || !editor.selection.collapsed) return YamlCompletionState()
+    val cursor = editor.selection.start.coerceIn(0, editor.text.length)
+    val lineStart = editor.text.lineStartBefore(cursor)
+    val block = editor.text.yamlCompletionBlock(lineStart) ?: return YamlCompletionState()
+
+    val lineToCursor = editor.text.substring(lineStart, cursor)
+    if (block == "rules") {
+        val match = Regex("""^(\s*-\s*)([A-Za-z-]{1,})$""").find(lineToCursor) ?: return YamlCompletionState()
+        val prefix = match.groupValues[2]
+        val tokenStart = lineStart + match.groups[2]!!.range.first
+        val suggestions = RuleTypeCompletions.filter { it.label.startsWith(prefix, ignoreCase = true) }
+        return YamlCompletionState(tokenStart, cursor, suggestions)
+    }
+
+    val match = Regex("""^(\s*(?:-\s*)?)([A-Za-z][A-Za-z0-9_.-]*)$""").find(lineToCursor)
+        ?: return YamlCompletionState()
+    val prefix = match.groupValues[2]
+    val tokenStart = lineStart + match.groups[2]!!.range.first
+    val suggestions = YamlBlockFieldCompletions[block].orEmpty()
+        .filter { it.label.startsWith(prefix, ignoreCase = true) }
+    return YamlCompletionState(tokenStart, cursor, suggestions)
+}
+
+private fun TextFieldValue.applyYamlCompletion(
+    state: YamlCompletionState,
+    completion: YamlCompletion,
+): TextFieldValue {
+    val start = state.tokenStart.coerceIn(0, text.length)
+    val end = state.tokenEnd.coerceIn(start, text.length)
+    val next = text.replaceRange(start, end, completion.insertText)
+    val cursor = start + completion.insertText.length
+    return TextFieldValue(next, TextRange(cursor))
+}
+
+private fun autoIndent(previous: TextFieldValue, next: TextFieldValue, type: String): TextFieldValue {
+    if (!next.selection.collapsed) return next
+    val cursor = next.selection.start
+    if (next.text.length != previous.text.length + 1 || cursor == 0 || next.text.getOrNull(cursor - 1) != '\n') {
+        return next
+    }
+    val previousCursor = previous.selection.start.coerceIn(0, previous.text.length)
+    val lineStart = previous.text.lineStartBefore(previousCursor)
+    val previousLine = previous.text.substring(lineStart, previousCursor)
+    val baseIndent = previousLine.takeWhile { it == ' ' || it == '\t' }
+    val extraIndent = when {
+        type == TemplateType.YAML && previousLine.trimEnd().endsWith(":") -> "  "
+        type == TemplateType.JS && previousLine.trimEnd().endsWith("{") -> "  "
+        else -> ""
+    }
+    val insert = baseIndent + extraIndent
+    val text = next.text.replaceRange(cursor, cursor, insert)
+    val selection = TextRange(cursor + insert.length)
+    return TextFieldValue(text, selection)
+}
+
+private fun String.lineStartBefore(position: Int): Int {
+    if (position <= 0) return 0
+    val index = lastIndexOf('\n', position - 1)
+    return if (index < 0) 0 else index + 1
+}
+
+private fun String.yamlCompletionBlock(lineStart: Int): String? {
+    val currentLineEnd = indexOf('\n', lineStart).let { if (it < 0) length else it }
+    val currentLine = substring(lineStart, currentLineEnd)
+    val currentIndent = currentLine.leadingIndentWidth()
+    val currentIsListItem = currentLine.trimStart().startsWith("-")
+    var namedMappingDepth = 0
+    val lines = substring(0, lineStart).lineSequence().toList().asReversed()
+    lines.forEach { line ->
+        val trimmed = line.trim()
+        if (trimmed.isBlank() || trimmed.startsWith("#")) return@forEach
+        val indent = line.leadingIndentWidth()
+        val canContainCurrentLine = indent < currentIndent || (currentIsListItem && indent == currentIndent)
+        if (!canContainCurrentLine) return@forEach
+        val isListItem = trimmed.startsWith("-")
+        val key = trimmed
+            .removePrefix("-")
+            .trim()
+            .substringBefore(":", missingDelimiterValue = "")
+            .trim()
+            .cleanOverrideKey()
+        if (key.isBlank() || ":" !in trimmed) return@forEach
+        if (key == "rules") return if (namedMappingDepth == 0) key else null
+        if (key in YamlBlockFieldCompletions) {
+            return when (key) {
+                "proxy-providers", "rule-providers" -> if (namedMappingDepth <= 1) key else null
+                else -> if (namedMappingDepth == 0) key else null
+            }
+        }
+        if (!isListItem) namedMappingDepth += 1
+    }
+    return null
+}
+
+private fun String.cleanOverrideKey(): String =
+    trim()
+        .removeSurrounding("\"")
+        .removeSurrounding("'")
+        .trimStart('+')
+        .trimEnd('+', '!')
+
+private fun String.leadingIndentWidth(): Int =
+    takeWhile { it == ' ' || it == '\t' }.sumOf { if (it == '\t') 2 else 1 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
