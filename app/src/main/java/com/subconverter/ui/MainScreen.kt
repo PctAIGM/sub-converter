@@ -152,6 +152,7 @@ import com.subconverter.domain.DnsConnectionMode
 import com.subconverter.domain.DnsProtocol
 import com.subconverter.domain.PublicDnsPresets
 import com.subconverter.domain.SubscriptionDnsConfig
+import com.subconverter.i18n.AppI18n
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -160,6 +161,16 @@ import java.net.NetworkInterface
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+@Composable
+private fun String.l10n(): String = AppI18n.text(LocalContext.current, this)
+
+@Composable
+private fun localize(text: String): String = AppI18n.text(LocalContext.current, text)
+
+@Composable
+private fun l10nf(format: String, vararg args: Any): String =
+    AppI18n.format(LocalContext.current, format, *args)
 
 private enum class MainTab(
     val title: String,
@@ -198,7 +209,7 @@ fun MainScreen(viewModel: MainViewModel) {
             TopAppBar(
                 title = {
                     Text(
-                        selectedTab.title,
+                        selectedTab.title.l10n(),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -214,19 +225,19 @@ fun MainScreen(viewModel: MainViewModel) {
                                 scannedUrl = ""
                                 editScreen = EditScreen.Scan
                             }) {
-                                Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码添加")
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = localize("扫码添加"))
                             }
                             IconButton(onClick = {
                                 state.sources.forEach { viewModel.refreshSource(it.id) }
                             }) {
-                                Icon(Icons.Default.Refresh, contentDescription = "全部刷新")
+                                Icon(Icons.Default.Refresh, contentDescription = localize("全部刷新"))
                             }
                             IconButton(onClick = {
                                 editingSource = null
                                 scannedUrl = ""
                                 editScreen = EditScreen.Source
                             }) {
-                                Icon(Icons.Default.Add, contentDescription = "添加订阅")
+                                Icon(Icons.Default.Add, contentDescription = localize("添加订阅"))
                             }
                         }
                         MainTab.Outputs -> {
@@ -234,20 +245,20 @@ fun MainScreen(viewModel: MainViewModel) {
                                 editingProfile = null
                                 editScreen = EditScreen.Output
                             }) {
-                                Icon(Icons.Default.Add, contentDescription = "添加输出")
+                                Icon(Icons.Default.Add, contentDescription = localize("添加输出"))
                             }
                         }
                         MainTab.Templates -> {
                             IconButton(onClick = {
                                 editScreen = EditScreen.OverrideHelp
                             }) {
-                                Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "覆写说明")
+                                Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = localize("覆写说明"))
                             }
                             IconButton(onClick = {
                                 editingTemplate = null
                                 editScreen = EditScreen.Template
                             }) {
-                                Icon(Icons.Default.Add, contentDescription = "添加覆写")
+                                Icon(Icons.Default.Add, contentDescription = localize("添加覆写"))
                             }
                         }
                         MainTab.Server -> Unit
@@ -430,10 +441,10 @@ private fun EditScreenScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleMedium) },
+                title = { Text(title.l10n(), style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                        Icon(Icons.Default.Close, contentDescription = localize("关闭"))
                     }
                 },
                 actions = {
@@ -441,7 +452,7 @@ private fun EditScreenScaffold(
                         onClick = onSave,
                         enabled = saveEnabled,
                     ) {
-                        Text("保存", fontWeight = FontWeight.SemiBold)
+                        Text("保存".l10n(), fontWeight = FontWeight.SemiBold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -644,15 +655,15 @@ private fun SourceEditScreen(
                 Text(
                     when {
                         parsedDnsProtocol == null && preResolveNodes ->
-                            "订阅更新和节点预解析均使用系统 DNS，节点缓存有效期为 1 小时。"
-                        parsedDnsProtocol == null -> "不覆盖解析，订阅更新使用系统 DNS。"
+                            localize("订阅更新和节点预解析均使用系统 DNS，节点缓存有效期为 1 小时。")
+                        parsedDnsProtocol == null -> localize("不覆盖解析，订阅更新使用系统 DNS。")
                         parsedConnectionMode == DnsConnectionMode.PRESERVE_DOMAIN ->
                             if (preResolveNodes) {
-                                "订阅连接保留域名；节点 server 将使用指定 DNS 预解析的 IP。"
+                                localize("订阅连接保留域名；节点 server 将使用指定 DNS 预解析的 IP。")
                             } else {
-                                "连接指定 DNS 返回的 IP，同时保留原域名、Host 与 SNI。"
+                                localize("连接指定 DNS 返回的 IP，同时保留原域名、Host 与 SNI。")
                             }
-                        else -> "URL 主机将改写为解析 IP，部分 HTTPS 或 CDN 订阅可能无法访问。"
+                        else -> localize("URL 主机将改写为解析 IP，部分 HTTPS 或 CDN 订阅可能无法访问。")
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -693,7 +704,7 @@ private fun SourceEditScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("自动刷新", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text("自动刷新".l10n(), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         }
                         Switch(
                             checked = auto,
@@ -721,7 +732,9 @@ private fun TemplateEditScreen(
     onDismiss: () -> Unit,
     onConfirm: (TemplateEntity?, String, String, String, Boolean, Boolean, String) -> Unit,
 ) {
-    var name by rememberSaveable(template?.id) { mutableStateOf(template?.name ?: "YAML 覆写") }
+    val yamlOverrideName = localize("YAML 覆写")
+    val jsOverrideName = localize("JavaScript 覆写")
+    var name by rememberSaveable(template?.id, yamlOverrideName) { mutableStateOf(template?.name ?: yamlOverrideName) }
     var remoteUrl by rememberSaveable(template?.id) { mutableStateOf(template?.remoteUrl.orEmpty()) }
     var enabled by rememberSaveable(template?.id) { mutableStateOf(template?.enabled ?: true) }
     var global by rememberSaveable(template?.id) { mutableStateOf(template?.global ?: false) }
@@ -767,7 +780,7 @@ private fun TemplateEditScreen(
             item {
                 iOSGroupedCard {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("覆写类型", style = MaterialTheme.typography.bodySmall)
+                        Text("覆写类型".l10n(), style = MaterialTheme.typography.bodySmall)
                         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                             val options = listOf(TemplateType.YAML to "YAML", TemplateType.JS to "JavaScript")
                             options.forEachIndexed { index, (value, label) ->
@@ -778,8 +791,10 @@ private fun TemplateEditScreen(
                                             if (body.isBlank() || body == defaultBodyFor(type)) {
                                                 body = defaultBodyFor(value)
                                             }
-                                            if (name == "YAML 覆写" || name == "JavaScript 覆写") {
-                                                name = "$label 覆写"
+                                            if (name == "YAML 覆写" || name == "JavaScript 覆写" ||
+                                                name == "YAML Override" || name == "JavaScript Override"
+                                            ) {
+                                                name = if (value == TemplateType.JS) jsOverrideName else yamlOverrideName
                                             }
                                             type = value
                                         }
@@ -841,7 +856,7 @@ private fun FullScreenCodeEditor(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "$title · $lineCount 行",
+                            l10nf("%s · %d 行", title, lineCount),
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.titleSmall,
                             maxLines = 1,
@@ -852,7 +867,7 @@ private fun FullScreenCodeEditor(
                             modifier = Modifier.height(36.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp),
                         ) {
-                            Text("完成", fontWeight = FontWeight.SemiBold)
+                            Text("完成".l10n(), fontWeight = FontWeight.SemiBold)
                         }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -906,6 +921,7 @@ private fun CodeEditorField(
     }
 
     val density = LocalDensity.current
+    val context = LocalContext.current
     var yamlCompletionOffsetY by remember { mutableStateOf(0.dp) }
     var cursorRect by remember { mutableStateOf<Rect?>(null) }
     var editorViewportHeight by remember { mutableStateOf(0) }
@@ -915,8 +931,8 @@ private fun CodeEditorField(
     val yamlCompletionState = remember(type, editor.text, editor.selection) {
         yamlCompletionState(type, editor)
     }
-    val validation = remember(type, editor.text) {
-        editorValidation(type, editor.text)
+    val validation = remember(type, editor.text, context.resources.configuration.locales) {
+        editorValidation(context, type, editor.text)
     }
     val syntaxPalette = CodeSyntaxPalette(
         key = MaterialTheme.colorScheme.primary,
@@ -990,7 +1006,7 @@ private fun CodeEditorField(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "${lineCount} 行",
+                            l10nf("%d 行", lineCount),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1000,7 +1016,7 @@ private fun CodeEditorField(
                                 modifier = Modifier.height(34.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp),
                             ) {
-                                Text("全屏", style = MaterialTheme.typography.labelMedium)
+                                Text("全屏".l10n(), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
@@ -1109,6 +1125,7 @@ private fun CodeEditorField(
                 }
             }
             if (type == TemplateType.YAML) {
+                val validationErrorPrefix = l10nf("YAML 语法可能有误：%s", "").trim()
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1119,7 +1136,7 @@ private fun CodeEditorField(
                         Text(
                             validation,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (validation.startsWith("YAML 语法可能有误")) {
+                            color = if (validation.startsWith(validationErrorPrefix)) {
                                 MaterialTheme.colorScheme.error
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -1426,14 +1443,20 @@ private fun String.indexOfJsComment(): Int {
     return -1
 }
 
-private fun editorValidation(type: String, text: String): String {
+private fun editorValidation(context: android.content.Context, type: String, text: String): String {
     if (text.isBlank()) return ""
     if (type != TemplateType.YAML) return ""
     return runCatching {
         org.yaml.snakeyaml.Yaml().load<Any?>(text)
     }.fold(
         onSuccess = { "" },
-        onFailure = { "YAML 语法可能有误：${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}" },
+        onFailure = {
+            AppI18n.format(
+                context,
+                "YAML 语法可能有误：%s",
+                it.message.orEmpty().lineSequence().firstOrNull().orEmpty(),
+            )
+        },
     )
 }
 
@@ -1551,10 +1574,10 @@ private fun OverrideHelpScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("覆写说明", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("覆写说明".l10n(), style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                        Icon(Icons.Default.Close, contentDescription = localize("关闭"))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -1575,12 +1598,12 @@ private fun OverrideHelpScreen(
                 iOSGroupedCard {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            "执行顺序",
+                            "执行顺序".l10n(),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "基础配置生成后，先应用全局覆写，再按输出配置里的顺序应用专属覆写。同一个覆写只会执行一次。同一输出中先合并所有 YAML 覆写，再按顺序执行 JavaScript 覆写。",
+                            "基础配置生成后，先应用全局覆写，再按输出配置里的顺序应用专属覆写。同一个覆写只会执行一次。同一输出中先合并所有 YAML 覆写，再按顺序执行 JavaScript 覆写。".l10n(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1636,7 +1659,7 @@ private fun OverrideHelpScreen(
                 iOSGroupedCard {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            "入口为 main(config)，接收解析后的完整配置对象，返回修改后的对象即可。JavaScript 覆写在所有 YAML 覆写之后执行。脚本出错会中断该输出的渲染。",
+                            "入口为 main(config)，接收解析后的完整配置对象，返回修改后的对象即可。JavaScript 覆写在所有 YAML 覆写之后执行。脚本出错会中断该输出的渲染。".l10n(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1743,7 +1766,7 @@ private fun OutputEditScreen(
                 iOSGroupedCard {
                     if (sources.isEmpty()) {
                         Text(
-                            "请先添加订阅源",
+                            "请先添加订阅源".l10n(),
                             modifier = Modifier.padding(14.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1828,7 +1851,7 @@ private fun OverrideSelectionList(
 ) {
     if (overrides.isEmpty()) {
         Text(
-            "请先添加覆写",
+            "请先添加覆写".l10n(),
             modifier = Modifier.padding(14.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1842,7 +1865,7 @@ private fun OverrideSelectionList(
 
     if (selectedOverrides.isEmpty()) {
         Text(
-            "未选择专属覆写，将只应用全局覆写",
+            "未选择专属覆写，将只应用全局覆写".l10n(),
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1890,6 +1913,7 @@ private fun OverrideSelectionRow(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1912,7 +1936,7 @@ private fun OverrideSelectionRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                overrideStateText(overrideItem),
+                overrideStateText(context, overrideItem),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -1921,10 +1945,10 @@ private fun OverrideSelectionRow(
         }
         if (selected) {
             IconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移", modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.KeyboardArrowUp, contentDescription = localize("上移"), modifier = Modifier.size(18.dp))
             }
             IconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移", modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = localize("下移"), modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -1958,7 +1982,7 @@ private fun NodePreviewScreen(
                     Column {
                         Text(source.name, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "$matchCount / ${allNames.size} 个节点",
+                            l10nf("%d / %d 个节点", matchCount, allNames.size),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1966,7 +1990,7 @@ private fun NodePreviewScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                        Icon(Icons.Default.Close, contentDescription = localize("关闭"))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -1984,8 +2008,8 @@ private fun NodePreviewScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text("暂无节点数据", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("请先刷新订阅", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("暂无节点数据".l10n(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("请先刷新订阅".l10n(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
@@ -2005,21 +2029,21 @@ private fun NodePreviewScreen(
                         ) {
                             if (source.prefix.isNotBlank()) {
                                 Text(
-                                    "前缀: ${source.prefix}",
+                                    l10nf("前缀: %s", source.prefix),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             if (source.includeRegex.isNotBlank()) {
                                 Text(
-                                    "保留: ${source.includeRegex}",
+                                    l10nf("保留: %s", source.includeRegex),
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             if (source.excludeRegex.isNotBlank()) {
                                 Text(
-                                    "排除: ${source.excludeRegex}",
+                                    l10nf("排除: %s", source.excludeRegex),
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -2139,6 +2163,7 @@ private fun OutputPreviewScreen(
     onDismiss: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val expanded = remember { mutableStateMapOf<Int, Boolean>() }
     val yaml = (previewState as? PreviewState.Success)?.yaml
     val rows = remember(yaml) { yaml?.let(::parseYamlToTree).orEmpty() }
@@ -2149,12 +2174,12 @@ private fun OutputPreviewScreen(
                 title = {
                     Column {
                         val title = (previewState as? PreviewState.Success)?.profileTitle
-                            ?: "完整配置预览"
+                            ?: localize("完整配置预览")
                         Text(title, style = MaterialTheme.typography.titleMedium)
                         val success = previewState as? PreviewState.Success
                         if (success != null) {
                             Text(
-                                "${success.yaml.length} 字符 · 实时渲染",
+                                l10nf("%d 字符 · 实时渲染", success.yaml.length),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -2166,23 +2191,23 @@ private fun OutputPreviewScreen(
                         IconButton(onClick = {
                             rows.forEach { if (it.collapsible) expanded[it.id] = true }
                         }) {
-                            Icon(Icons.Default.UnfoldMore, contentDescription = "全部展开")
+                            Icon(Icons.Default.UnfoldMore, contentDescription = localize("全部展开"))
                         }
                         IconButton(onClick = {
                             rows.forEach { if (it.collapsible) expanded[it.id] = false }
                         }) {
-                            Icon(Icons.Default.UnfoldLess, contentDescription = "全部折叠")
+                            Icon(Icons.Default.UnfoldLess, contentDescription = localize("全部折叠"))
                         }
                         IconButton(onClick = {
                             yaml?.let { clipboard.setText(AnnotatedString(it)) }
                         }) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "复制")
+                            Icon(Icons.Default.ContentCopy, contentDescription = localize("复制"))
                         }
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                        Icon(Icons.Default.Close, contentDescription = localize("关闭"))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -2203,7 +2228,7 @@ private fun OutputPreviewScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(12.dp))
-                        Text("正在渲染配置...", style = MaterialTheme.typography.bodySmall)
+                        Text("正在渲染配置...".l10n(), style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
@@ -2219,12 +2244,12 @@ private fun OutputPreviewScreen(
                             modifier = Modifier.size(40.dp),
                         )
                         Text(
-                            "渲染失败",
+                            "渲染失败".l10n(),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                         Text(
-                            previewState.message,
+                            AppI18n.message(LocalContext.current, previewState.message),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2249,7 +2274,7 @@ private fun YamlTreeView(
 ) {
     if (rows.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("（空配置）", style = MaterialTheme.typography.bodySmall)
+            Text("（空配置）".l10n(), style = MaterialTheme.typography.bodySmall)
         }
         return
     }
@@ -2306,6 +2331,7 @@ private fun TreeRowView(
     val keyColor = MaterialTheme.colorScheme.primary
     val valueColor = MaterialTheme.colorScheme.onSurface
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val childCountText = if (row.collapsible) l10nf(" %d 项", row.childCount) else ""
 
     Row(
         modifier = Modifier
@@ -2344,7 +2370,7 @@ private fun TreeRowView(
             }
             if (row.collapsible) {
                 withStyle(SpanStyle(color = mutedColor)) {
-                    append(" ${row.childCount} 项")
+                    append(childCountText)
                 }
             } else {
                 row.value?.let {
@@ -2379,10 +2405,10 @@ private fun SmallFormField(
             value = value,
             onValueChange = onValueChange,
             label = {
-                Text(label, style = MaterialTheme.typography.labelMedium)
+                Text(label.l10n(), style = MaterialTheme.typography.labelMedium)
             },
             placeholder = {
-                Text(placeholder, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                Text(placeholder.l10n(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
             },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
@@ -2417,12 +2443,12 @@ private fun ChoiceFormField(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    label,
+                    label.l10n(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    selectedLabel,
+                    selectedLabel.l10n(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -2439,7 +2465,7 @@ private fun ChoiceFormField(
         ) {
             options.forEach { (id, text) ->
                 DropdownMenuItem(
-                    text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+                    text = { Text(text.l10n(), style = MaterialTheme.typography.bodySmall) },
                     onClick = {
                         expanded = false
                         onSelected(id)
@@ -2471,7 +2497,7 @@ private fun FieldDivider() {
 @Composable
 private fun SectionHeader(text: String) {
     Text(
-        text,
+        text.l10n(),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 4.dp),
@@ -2480,12 +2506,14 @@ private fun SectionHeader(text: String) {
 
 @Composable
 private fun RegexHint() {
+    val firstDescription = localize("包含\"香港\"或\"台湾\"的节点")
+    val secondDescription = localize("同时包含\"港\"和\"BGP\"")
     Column(
         modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 6.dp),
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         Text(
-            "支持正则表达式，匹配节点名称。常见写法:",
+            "支持正则表达式，匹配节点名称。常见写法:".l10n(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
         )
@@ -2496,7 +2524,7 @@ private fun RegexHint() {
                 }
                 append("→ ")
                 withStyle(SpanStyle(fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))) {
-                    append("包含\"香港\"或\"台湾\"的节点")
+                    append(firstDescription)
                 }
             },
             style = MaterialTheme.typography.labelSmall,
@@ -2508,7 +2536,7 @@ private fun RegexHint() {
                 }
                 append(" → ")
                 withStyle(SpanStyle(fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))) {
-                    append("同时包含\"港\"和\"BGP\"")
+                    append(secondDescription)
                 }
             },
             style = MaterialTheme.typography.labelSmall,
@@ -2545,9 +2573,9 @@ private fun RegexPreview(nodeNames: List<String>, includeRegex: String, excludeR
     }
 
     val summaryText = when {
-        preview.isCalculating -> "预览计算中..."
-        preview.hasRegexError -> "预览: 正则表达式有误"
-        else -> "预览: ${preview.matchCount}/${nodeNames.size} 个节点匹配"
+        preview.isCalculating -> localize("预览计算中...")
+        preview.hasRegexError -> localize("预览: 正则表达式有误")
+        else -> l10nf("预览: %d/%d 个节点匹配", preview.matchCount, nodeNames.size)
     }
     val summaryColor = if (preview.hasRegexError && !preview.isCalculating) {
         MaterialTheme.colorScheme.error
@@ -2581,7 +2609,7 @@ private fun RegexPreview(nodeNames: List<String>, includeRegex: String, excludeR
         ) {
             if (preview.items.isEmpty()) {
                 Text(
-                    text = "正在计算预览...",
+                    text = "正在计算预览...".l10n(),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontSize = 10.sp,
                         lineHeight = 14.sp,
@@ -2609,7 +2637,7 @@ private fun RegexPreview(nodeNames: List<String>, includeRegex: String, excludeR
             }
             if (!preview.isCalculating && nodeNames.size > preview.items.size) {
                 Text(
-                    "... 还有 ${nodeNames.size - preview.items.size} 个节点",
+                    l10nf("... 还有 %d 个节点", nodeNames.size - preview.items.size),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 )
@@ -2677,12 +2705,12 @@ private fun iOSStyleNavigationBar(
                 icon = {
                     Icon(
                         if (selectedTab == tab) tab.selectedIcon else tab.unselectedIcon,
-                        contentDescription = tab.title,
+                        contentDescription = tab.title.l10n(),
                         modifier = Modifier.size(24.dp),
                     )
                 },
                 label = {
-                    Text(tab.title, style = MaterialTheme.typography.labelSmall)
+                    Text(tab.title.l10n(), style = MaterialTheme.typography.labelSmall)
                 },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
@@ -2782,6 +2810,7 @@ private fun SourceCard(
     onDelete: () -> Unit,
     onViewNodes: () -> Unit,
 ) {
+    val context = LocalContext.current
     iOSGroupedCard(
         modifier = Modifier.clickable(onClick = onViewNodes),
     ) {
@@ -2797,12 +2826,12 @@ private fun SourceCard(
                     )
                     if (refreshing) {
                         Text(
-                            "正在刷新...",
+                            "正在刷新...".l10n(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     } else {
-                        sourceDnsLabel(source)?.let {
+                        sourceDnsLabel(context, source)?.let {
                             Text(
                                 it,
                                 style = MaterialTheme.typography.labelSmall,
@@ -2886,18 +2915,18 @@ private fun SourceCard(
                 ) {
                     source.expireAtSeconds?.let {
                         Text(
-                            "到期 ${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(it * 1000))}",
+                            l10nf("到期 %s", SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(it * 1000))),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } ?: Text(
-                        "到期未知",
+                        "到期未知".l10n(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     source.lastRefreshAt?.let {
                         Text(
-                            "上次成功 ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))}",
+                            l10nf("上次成功 %s", SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2922,7 +2951,7 @@ private fun SourceCard(
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        it,
+                        AppI18n.message(context, it),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         maxLines = 2,
@@ -2994,6 +3023,7 @@ private fun OutputCard(
     onQrShare: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     iOSGroupedCard {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3006,7 +3036,7 @@ private fun OutputCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "${sourceNames(profile, sources)} · ${overrideSummary(profile, templates)}",
+                        "${sourceNames(context, profile, sources)} · ${overrideSummary(context, profile, templates)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -3014,7 +3044,7 @@ private fun OutputCard(
                     )
                     if (profile.fetchCount > 0) {
                         Text(
-                            "已拉取 ${profile.fetchCount} 次",
+                            l10nf("已拉取 %d 次", profile.fetchCount),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -3115,6 +3145,7 @@ private fun TemplateCard(
     canMoveUp: Boolean,
     canMoveDown: Boolean,
 ) {
+    val context = LocalContext.current
     iOSGroupedCard {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3130,16 +3161,16 @@ private fun TemplateCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        overrideCardSubtitle(template),
+                        overrideCardSubtitle(context, template),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = localize("上移"), modifier = Modifier.size(18.dp))
                 }
                 IconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = localize("下移"), modifier = Modifier.size(18.dp))
                 }
                 if (template.remoteUrl.isNotBlank()) {
                     iOSIconButton(Icons.Default.Refresh, "刷新", onRefresh)
@@ -3226,9 +3257,9 @@ private fun ServerScreen(
     var gistToken by rememberSaveable(settings.gistToken) { mutableStateOf(settings.gistToken) }
     val lanAddress = remember(allowLan) { if (allowLan) localLanAddress() else null }
     val allowLanDescription = if (allowLan) {
-        "已开启，使用 ${lanAddress ?: "手机局域网 IP"} 分享"
+        l10nf("已开启，使用 %s 分享", lanAddress ?: localize("手机局域网 IP"))
     } else {
-        "关闭时仅本机访问，开启后显示局域网地址"
+        localize("关闭时仅本机访问，开启后显示局域网地址")
     }
     val previewSettings = settings.copy(
         port = port.toIntOrNull() ?: settings.port,
@@ -3312,7 +3343,7 @@ private fun ServerScreen(
             iOSGroupedCard {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "订阅拉取 User-Agent",
+                        "订阅拉取 User-Agent".l10n(),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -3321,7 +3352,7 @@ private fun ServerScreen(
                         onValueChange = { globalUserAgent = it },
                         placeholder = {
                             Text(
-                                "全局请求 UA",
+                                "全局请求 UA".l10n(),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             )
@@ -3338,7 +3369,7 @@ private fun ServerScreen(
                         textStyle = MaterialTheme.typography.bodySmall,
                     )
                     Text(
-                        "拉取订阅时使用的默认 User-Agent",
+                        "拉取订阅时使用的默认 User-Agent".l10n(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
@@ -3360,7 +3391,7 @@ private fun ServerScreen(
                         onValueChange = { gistToken = it },
                         placeholder = {
                             Text(
-                                "ghp_xxx（需 gist 权限）",
+                                "ghp_xxx（需 gist 权限）".l10n(),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             )
@@ -3372,7 +3403,7 @@ private fun ServerScreen(
                             IconButton(onClick = { gistTokenVisible = !gistTokenVisible }) {
                                 Icon(
                                     imageVector = if (gistTokenVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = if (gistTokenVisible) "隐藏" else "显示",
+                                    contentDescription = if (gistTokenVisible) localize("隐藏") else localize("显示"),
                                     modifier = Modifier.size(18.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -3389,7 +3420,7 @@ private fun ServerScreen(
                         textStyle = MaterialTheme.typography.bodySmall,
                     )
                     Text(
-                        "上传配置到 Gist 用的个人访问令牌，需 gist 权限。留空则不开启上传。",
+                        "上传配置到 Gist 用的个人访问令牌，需 gist 权限。留空则不开启上传。".l10n(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
@@ -3409,7 +3440,7 @@ private fun ServerScreen(
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
             ) {
-                Text("保存配置", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                Text("保存配置".l10n(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -3438,7 +3469,7 @@ private fun ZashboardCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        if (running) "静态面板已随 HTTP 服务开放" else "启动本地 HTTP 服务后可访问",
+                        if (running) "静态面板已随 HTTP 服务开放".l10n() else "启动本地 HTTP 服务后可访问".l10n(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -3482,7 +3513,7 @@ private fun ZashboardCard(
                 ) {
                     Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("打开", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Text("打开".l10n(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 }
                 Button(
                     onClick = onCopy,
@@ -3492,7 +3523,7 @@ private fun ZashboardCard(
                 ) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("复制", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Text("复制".l10n(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 }
                 Button(
                     onClick = onQrShare,
@@ -3502,7 +3533,7 @@ private fun ZashboardCard(
                 ) {
                     Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("二维码", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Text("二维码".l10n(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -3541,12 +3572,12 @@ private fun ServerStatusCard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "本地 HTTP 服务",
+                    "本地 HTTP 服务".l10n(),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    if (running) "运行中" else "已停止",
+                    if (running) "运行中".l10n() else "已停止".l10n(),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (running) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -3566,7 +3597,7 @@ private fun ServerStatusCard(
                     modifier = Modifier.size(14.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text(if (running) "停止" else "启动", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Text(if (running) "停止".l10n() else "启动".l10n(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -3586,7 +3617,7 @@ private fun iOSFormTextField(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            label,
+            label.l10n(),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.width(80.dp),
             color = MaterialTheme.colorScheme.onSurface,
@@ -3596,7 +3627,7 @@ private fun iOSFormTextField(
             onValueChange = onValueChange,
             placeholder = {
                 Text(
-                    placeholder,
+                    placeholder.l10n(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 )
@@ -3630,10 +3661,10 @@ private fun iOSFormSwitch(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodySmall)
+            Text(label.l10n(), style = MaterialTheme.typography.bodySmall)
             subtitle?.let {
                 Text(
-                    it,
+                    it.l10n(),
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                 )
@@ -3664,7 +3695,7 @@ private fun iOSIconButton(
     ) {
         Icon(
             icon,
-            contentDescription = contentDescription,
+            contentDescription = contentDescription.l10n(),
             tint = tint,
             modifier = Modifier.size(16.dp),
         )
@@ -3682,7 +3713,7 @@ private fun IOSInfoRow(label: String, value: String, icon: ImageVector) {
         )
         Spacer(Modifier.width(4.dp))
         Text(
-            "$label: ",
+            "${label.l10n()}: ",
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
         )
@@ -3723,8 +3754,8 @@ private fun iOSEmptyState(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title.l10n(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text(subtitle.l10n(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -3753,10 +3784,10 @@ private fun QrScanScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("扫描二维码", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("扫描二维码".l10n(), style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                        Icon(Icons.Default.Close, contentDescription = localize("关闭"))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -3774,10 +3805,10 @@ private fun QrScanScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text("需要相机权限", style = MaterialTheme.typography.bodyMedium)
+                Text("需要相机权限".l10n(), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = { launcher.launch(android.Manifest.permission.CAMERA) }) {
-                    Text("授予权限")
+                    Text("授予权限".l10n())
                 }
             }
         } else {
@@ -3881,10 +3912,10 @@ private fun QrShareScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("二维码分享", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("二维码分享".l10n(), style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                        Icon(Icons.Default.Close, contentDescription = localize("关闭"))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -3957,46 +3988,51 @@ private fun extractNodeNames(yamlBody: String): List<String> {
     }
 }
 
-private fun trafficText(source: SubscriptionSourceEntity): String {
-    val total = source.totalBytes?.let(::formatBytes) ?: "未知"
+private fun trafficText(context: android.content.Context, source: SubscriptionSourceEntity): String {
+    val total = source.totalBytes?.let(::formatBytes) ?: AppI18n.text(context, "未知")
     val used = listOfNotNull(source.uploadBytes, source.downloadBytes).takeIf { it.isNotEmpty() }?.sum()?.let(::formatBytes)
-        ?: "未知"
+        ?: AppI18n.text(context, "未知")
     val remaining = source.totalBytes?.let { totalBytes ->
         val usedBytes = listOfNotNull(source.uploadBytes, source.downloadBytes).sum()
         formatBytes((totalBytes - usedBytes).coerceAtLeast(0))
-    } ?: "未知"
-    return "已用 $used / 剩余 $remaining / 总量 $total"
+    } ?: AppI18n.text(context, "未知")
+    return AppI18n.format(context, "已用 %s / 剩余 %s / 总量 %s", used, remaining, total)
 }
 
-private fun sourceDnsLabel(source: SubscriptionSourceEntity): String? {
+private fun sourceDnsLabel(context: android.content.Context, source: SubscriptionSourceEntity): String? {
     val protocol = DnsProtocol.fromStorage(source.dnsProtocol)
     val downloadDns = protocol?.let {
         val preset = PublicDnsPresets.all.firstOrNull { preset ->
             preset.protocol == it && preset.server.equals(source.dnsServer.trim(), ignoreCase = true)
         }
-        val resolver = preset?.label ?: "自定义 ${it.name}"
+        val resolver = preset?.label?.let { label -> AppI18n.text(context, label) }
+            ?: AppI18n.format(context, "自定义 %s", it.name)
         val mode = when (DnsConnectionMode.fromStorage(source.dnsConnectionMode)) {
-            DnsConnectionMode.PRESERVE_DOMAIN -> "保留域名"
+            DnsConnectionMode.PRESERVE_DOMAIN -> AppI18n.text(context, "保留域名")
             DnsConnectionMode.IP_URL -> "IP URL"
         }
         "$resolver · $mode"
     }
     val nodeDns = if (source.preResolveNodes) {
         val total = source.nodeResolveSuccessCount + source.nodeResolveFailureCount
-        "节点预解析 ${source.nodeResolveSuccessCount}/$total"
+        AppI18n.format(context, "节点预解析 %d/%d", source.nodeResolveSuccessCount, total)
     } else {
         null
     }
     return listOfNotNull(downloadDns, nodeDns).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
-private fun overrideCardSubtitle(template: TemplateEntity): String {
+private fun overrideCardSubtitle(context: android.content.Context, template: TemplateEntity): String {
     val refreshTime = template.lastRefreshAt?.let {
-        "上次成功 ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))}"
-    } ?: "未成功刷新"
+        AppI18n.format(context, "上次成功 %s", SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it)))
+    } ?: AppI18n.text(context, "未成功刷新")
     return listOf(
-        overrideStateText(template),
-        if (template.remoteUrl.isBlank()) "本地覆写" else "远程覆写 · $refreshTime",
+        overrideStateText(context, template),
+        if (template.remoteUrl.isBlank()) {
+            AppI18n.text(context, "本地覆写")
+        } else {
+            AppI18n.format(context, "远程覆写 · %s", refreshTime)
+        },
     ).joinToString(" · ")
 }
 
@@ -4011,34 +4047,34 @@ private fun formatBytes(bytes: Long): String {
     return "%.1f %s".format(Locale.US, value, units[index])
 }
 
-private fun sourceNames(profile: OutputProfileEntity, sources: List<SubscriptionSourceEntity>): String {
+private fun sourceNames(context: android.content.Context, profile: OutputProfileEntity, sources: List<SubscriptionSourceEntity>): String {
     val ids = parseIdList(profile.sourceIds)
     val names = ids.map { id -> sources.firstOrNull { it.id == id }?.name ?: "#$id" }
-    return "订阅源: ${names.joinToString("、")}"
+    return AppI18n.format(context, "订阅源: %s", names.joinToString("、"))
 }
 
-private fun overrideSummary(profile: OutputProfileEntity, overrides: List<TemplateEntity>): String {
+private fun overrideSummary(context: android.content.Context, profile: OutputProfileEntity, overrides: List<TemplateEntity>): String {
     val globalCount = overrides.count { it.enabled && it.global }
     val selectedNames = parseIdList(profile.overrideIds)
         .mapNotNull { id -> overrides.firstOrNull { it.id == id }?.name }
 
     val parts = mutableListOf<String>()
     if (globalCount > 0) {
-        parts += "全局覆写 $globalCount 个"
+        parts += AppI18n.format(context, "全局覆写 %d 个", globalCount)
     }
     parts += if (selectedNames.isEmpty()) {
-        "专属覆写: 无"
+        AppI18n.text(context, "专属覆写: 无")
     } else {
-        "专属覆写: ${selectedNames.joinToString("、")}"
+        AppI18n.format(context, "专属覆写: %s", selectedNames.joinToString("、"))
     }
     return parts.joinToString(" · ")
 }
 
-private fun overrideStateText(template: TemplateEntity): String =
+private fun overrideStateText(context: android.content.Context, template: TemplateEntity): String =
     listOfNotNull(
         if (template.type == TemplateType.JS) "JS" else "YAML",
-        if (template.enabled) "启用" else "停用",
-        if (template.global) "全局" else null,
+        if (template.enabled) AppI18n.text(context, "启用") else AppI18n.text(context, "停用"),
+        if (template.global) AppI18n.text(context, "全局") else null,
     ).joinToString(" · ")
 
 private fun parseIdList(rawIds: String): List<Long> =

@@ -14,6 +14,7 @@ import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
 import com.subconverter.domain.DnsConnectionMode
 import com.subconverter.domain.SubscriptionDnsConfig
 import com.subconverter.domain.nodeResolutionFingerprint
+import com.subconverter.i18n.AppI18n
 import com.subconverter.server.LocalHttpServerService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,7 +49,7 @@ class MainViewModel(
     val previewState = MutableStateFlow<PreviewState>(PreviewState.Idle)
 
     fun showMessage(message: String) {
-        messages.value = message
+        messages.value = AppI18n.message(container.appContext, message)
     }
 
     fun clearMessage() {
@@ -64,7 +65,7 @@ class MainViewModel(
                     rendered?.let { PreviewState.Success(it.yamlBody, it.profileTitle) }
                         ?: PreviewState.Error("输出不存在")
                 },
-                onFailure = { PreviewState.Error(it.message ?: "渲染失败") },
+                onFailure = { PreviewState.Error(AppI18n.message(container.appContext, it.message ?: "渲染失败")) },
             )
         }
     }
@@ -106,7 +107,7 @@ class MainViewModel(
             val settings = container.settingsStore.current()
             if (settings.enabled && !container.localHttpServer.running.value) {
                 runCatching { LocalHttpServerService.start(container.appContext) }
-                    .onFailure { messages.value = it.message ?: "HTTP 服务启动失败" }
+                    .onFailure { messages.value = AppI18n.message(container.appContext, it.message ?: "HTTP 服务启动失败") }
             }
         }
     }
@@ -126,11 +127,11 @@ class MainViewModel(
     ) {
         viewModelScope.launch {
             if (url.isBlank()) {
-                messages.value = "订阅地址不能为空"
+                messages.value = AppI18n.text(container.appContext, "订阅地址不能为空")
                 return@launch
             }
             dnsConfig.validate()?.let {
-                messages.value = it
+                messages.value = AppI18n.message(container.appContext, it)
                 return@launch
             }
             val resolvedName = name.trim().ifBlank {
@@ -176,10 +177,14 @@ class MainViewModel(
                 refreshingIds.update { it + sourceId }
                 val globalUserAgent = container.settingsStore.current().globalUserAgent
                 val outcome = container.subscriptionRepository.refreshSource(sourceId, globalUserAgent)
-                messages.value = outcome.message
+                messages.value = AppI18n.message(container.appContext, outcome.message)
                 refreshingIds.update { it - sourceId }
             } else {
-                messages.value = if (existing == null) "已添加订阅 #$sourceId" else "订阅已保存"
+                messages.value = if (existing == null) {
+                    AppI18n.message(container.appContext, "已添加订阅 #$sourceId")
+                } else {
+                    AppI18n.text(container.appContext, "订阅已保存")
+                }
             }
         }
     }
@@ -187,7 +192,7 @@ class MainViewModel(
     fun deleteSource(source: SubscriptionSourceEntity) {
         viewModelScope.launch {
             container.subscriptionRepository.delete(source)
-            messages.value = "订阅已删除"
+            messages.value = AppI18n.text(container.appContext, "订阅已删除")
         }
     }
 
@@ -229,11 +234,11 @@ class MainViewModel(
     ) {
         viewModelScope.launch {
             if (name.isBlank()) {
-                messages.value = "覆写名称不能为空"
+                messages.value = AppI18n.text(container.appContext, "覆写名称不能为空")
                 return@launch
             }
             container.yamlService.validateOverride(type, yamlBody)?.let { error ->
-                messages.value = error
+                messages.value = AppI18n.message(container.appContext, error)
                 return@launch
             }
             val template = (existing ?: TemplateEntity(name = "", yamlBody = "")).copy(
@@ -255,9 +260,9 @@ class MainViewModel(
 
             if (remoteUrl.isNotBlank()) {
                 val outcome = container.outputRepository.refreshTemplate(templateId)
-                messages.value = outcome.message
+                messages.value = AppI18n.message(container.appContext, outcome.message)
             } else {
-                messages.value = "覆写已保存"
+                messages.value = AppI18n.text(container.appContext, "覆写已保存")
             }
         }
     }
@@ -265,14 +270,14 @@ class MainViewModel(
     fun deleteTemplate(template: TemplateEntity) {
         viewModelScope.launch {
             container.outputRepository.deleteTemplate(template)
-            messages.value = "覆写已删除"
+            messages.value = AppI18n.text(container.appContext, "覆写已删除")
         }
     }
 
     fun refreshTemplate(templateId: Long) {
         viewModelScope.launch {
             val outcome = container.outputRepository.refreshTemplate(templateId)
-            messages.value = outcome.message
+            messages.value = AppI18n.message(container.appContext, outcome.message)
         }
     }
 
@@ -308,7 +313,7 @@ class MainViewModel(
     ) {
         viewModelScope.launch {
             if (name.isBlank() || sourceIds.isEmpty()) {
-                messages.value = "输出名称和订阅源不能为空"
+                messages.value = AppI18n.text(container.appContext, "输出名称和订阅源不能为空")
                 return@launch
             }
             val profile = (existing ?: OutputProfileEntity(name = "", sourceIds = "", templateId = 0)).copy(
@@ -328,14 +333,14 @@ class MainViewModel(
             } else {
                 container.outputRepository.updateProfile(profile)
             }
-            messages.value = "输出配置已保存"
+            messages.value = AppI18n.text(container.appContext, "输出配置已保存")
         }
     }
 
     fun deleteProfile(profile: OutputProfileEntity) {
         viewModelScope.launch {
             container.outputRepository.deleteProfile(profile)
-            messages.value = "输出配置已删除"
+            messages.value = AppI18n.text(container.appContext, "输出配置已删除")
         }
     }
 
@@ -361,7 +366,7 @@ class MainViewModel(
             refreshingIds.update { it + sourceId }
             val globalUserAgent = container.settingsStore.current().globalUserAgent
             val outcome = container.subscriptionRepository.refreshSource(sourceId, globalUserAgent)
-            messages.value = outcome.message
+            messages.value = AppI18n.message(container.appContext, outcome.message)
             refreshingIds.update { it - sourceId }
         }
     }
@@ -373,16 +378,16 @@ class MainViewModel(
                 runCatching {
                     container.localHttpServer.start(settings)
                     LocalHttpServerService.start(container.appContext)
-                    messages.value = "HTTP 服务已启动"
+                    messages.value = AppI18n.text(container.appContext, "HTTP 服务已启动")
                 }.onFailure {
                     container.settingsStore.update(settings.copy(enabled = false))
                     container.localHttpServer.stop()
-                    messages.value = it.message ?: "HTTP 服务启动失败"
+                    messages.value = AppI18n.message(container.appContext, it.message ?: "HTTP 服务启动失败")
                 }
             } else {
                 LocalHttpServerService.stop(container.appContext)
                 container.localHttpServer.stop()
-                messages.value = "HTTP 服务已停止"
+                messages.value = AppI18n.text(container.appContext, "HTTP 服务已停止")
             }
         }
     }

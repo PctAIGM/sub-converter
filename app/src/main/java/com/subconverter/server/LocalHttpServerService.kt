@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.subconverter.MainActivity
 import com.subconverter.R
 import com.subconverter.core.AppContainer
+import com.subconverter.i18n.AppI18n
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +38,7 @@ class LocalHttpServerService : Service() {
             return START_NOT_STICKY
         }
 
-        startInForeground("HTTP 服务启动中")
+        startInForeground(AppI18n.text(this, "HTTP 服务启动中"))
         scope.launch {
             val settings = container.settingsStore.current()
             if (!settings.enabled) {
@@ -50,7 +51,14 @@ class LocalHttpServerService : Service() {
                     container.localHttpServer.start(settings)
                 }
             }.onSuccess {
-                updateNotification("端口 ${settings.port} · ${if (settings.allowLan) "局域网访问" else "仅本机访问"}")
+                updateNotification(
+                    AppI18n.format(
+                        this@LocalHttpServerService,
+                        "端口 %d · %s",
+                        settings.port,
+                        AppI18n.text(this@LocalHttpServerService, if (settings.allowLan) "局域网访问" else "仅本机访问"),
+                    ),
+                )
             }.onFailure {
                 container.settingsStore.update(settings.copy(enabled = false))
                 stopSelf()
@@ -117,13 +125,13 @@ class LocalHttpServerService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_http_service)
-            .setContentTitle("Sub Converter")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(contentText)
             .setContentIntent(openPendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(R.drawable.ic_stat_http_service, "停止", stopPendingIntent)
+            .addAction(R.drawable.ic_stat_http_service, AppI18n.text(this, "停止"), stopPendingIntent)
             .build()
     }
 
@@ -131,7 +139,7 @@ class LocalHttpServerService : Service() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "本地 HTTP 服务",
+            AppI18n.text(this, "本地 HTTP 服务"),
             NotificationManager.IMPORTANCE_LOW,
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
