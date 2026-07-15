@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SubscriptionSourceDao {
+    @Query("SELECT * FROM subscription_sources")
+    suspend fun getAll(): List<SubscriptionSourceEntity>
     @Query("SELECT * FROM subscription_sources ORDER BY id DESC")
     fun observeAll(): Flow<List<SubscriptionSourceEntity>>
 
@@ -28,10 +30,19 @@ interface SubscriptionSourceDao {
 
     @Delete
     suspend fun delete(source: SubscriptionSourceEntity)
+
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(sources: List<SubscriptionSourceEntity>)
+
+    @Query("DELETE FROM subscription_sources")
+    suspend fun deleteAll()
 }
 
 @Dao
 interface NodeDnsCacheDao {
+    @Query("SELECT * FROM node_dns_cache")
+    suspend fun getAll(): List<NodeDnsCacheEntity>
     @Query("SELECT * FROM node_dns_cache WHERE sourceId = :sourceId")
     suspend fun getBySourceId(sourceId: Long): List<NodeDnsCacheEntity>
 
@@ -40,6 +51,10 @@ interface NodeDnsCacheDao {
 
     @Query("DELETE FROM node_dns_cache WHERE sourceId = :sourceId")
     suspend fun deleteBySourceId(sourceId: Long)
+
+
+    @Query("DELETE FROM node_dns_cache")
+    suspend fun deleteAll()
 
     @Transaction
     suspend fun replaceForSource(sourceId: Long, entries: List<NodeDnsCacheEntity>) {
@@ -70,6 +85,13 @@ interface TemplateDao {
 
     @Delete
     suspend fun delete(template: TemplateEntity)
+
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(templates: List<TemplateEntity>)
+
+    @Query("DELETE FROM templates")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -91,6 +113,13 @@ interface OutputProfileDao {
 
     @Delete
     suspend fun delete(profile: OutputProfileEntity)
+
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(profiles: List<OutputProfileEntity>)
+
+    @Query("DELETE FROM output_profiles")
+    suspend fun deleteAll()
 
     @Query("UPDATE output_profiles SET fetchCount = fetchCount + 1 WHERE id = :id")
     suspend fun incrementFetchCount(id: Long)

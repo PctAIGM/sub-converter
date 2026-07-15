@@ -103,6 +103,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -156,6 +157,7 @@ import com.subconverter.i18n.AppI18n
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.text.SimpleDateFormat
@@ -198,6 +200,30 @@ fun MainScreen(viewModel: MainViewModel) {
     var viewingProfile by remember { mutableStateOf<OutputProfileEntity?>(null) }
     var scannedUrl by remember { mutableStateOf("") }
     var sharingUrl by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var backupContent by remember { mutableStateOf<String?>(null) }
+    var backupExportSettings by remember { mutableStateOf<ServerSettings?>(null) }
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let { target ->
+        scope.launch {
+            runCatching {
+                context.contentResolver.openOutputStream(target)?.bufferedWriter()?.use { output ->
+                    output.write(viewModel.exportBackupJson(backupExportSettings))
+                } ?: error("无法写入文件")
+                backupExportSettings = null
+            }.onSuccess { viewModel.showMessage("备份已导出") }
+                .onFailure { viewModel.showMessage("导出失败: ${it.message}") }
+        }
+    } }
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { source ->
+        backupContent = runCatching {
+            context.contentResolver.openInputStream(source)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+    } }
 
     if (editScreen == EditScreen.None && selectedTab != MainTab.Sources) {
         androidx.activity.compose.BackHandler { selectedTab = MainTab.Sources }
@@ -336,9 +362,32 @@ fun MainScreen(viewModel: MainViewModel) {
                     sharingUrl = it
                     editScreen = EditScreen.QrShare
                 },
+                onExportBackup = { settings ->
+                    backupExportSettings = settings
+                    exportLauncher.launch("subconverter-backup.json")
+                },
+                onImportBackup = { importLauncher.launch(arrayOf("application/json", "text/json")) },
                 modifier = Modifier.padding(padding),
             )
         }
+    }
+
+    backupContent?.let { content ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { backupContent = null },
+            title = { Text("导入完整备份？") },
+            text = { Text("将覆盖当前全部数据和服务设置，且无法撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        runCatching { viewModel.importBackupJson(content) }
+                            .onFailure { viewModel.showMessage("导入失败: ${it.message}") }
+                        backupContent = null
+                    }
+                }) { Text("继续导入") }
+            },
+            dismissButton = { TextButton(onClick = { backupContent = null }) { Text("取消") } },
+        )
     }
 
     if (editScreen != EditScreen.None) {
@@ -3245,6 +3294,8 @@ private fun ServerScreen(
     onAutoStartOnBootChange: (Boolean) -> Unit,
     onCopied: () -> Unit,
     onQrShare: (String) -> Unit,
+    onExportBackup: (ServerSettings) -> Unit,
+    onImportBackup: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -3308,6 +3359,23 @@ private fun ServerScreen(
                 },
                 onQrShare = { onQrShare(zashboardUrl) },
             )
+        }
+
+        item {
+            iOSGroupedCard {
+                Column(Modifier.padding(14.dp)) {
+                    Text("完整数据备份", style = MaterialTheme.typography.bodyMedium)
+                    Text("导出或导入订阅、输出、覆写、DNS 缓存和服务设置", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                FieldDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(onClick = { onExportBackup(previewSettings) }, modifier = Modifier.weight(1f)) { Text("导出") }
+                    Button(onClick = onImportBackup, modifier = Modifier.weight(1f)) { Text("导入") }
+                }
+            }
         }
 
         item {

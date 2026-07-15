@@ -398,6 +398,14 @@ class MainViewModel(
         }
     }
 
+    suspend fun exportBackupJson(settings: ServerSettings? = null): String =
+        container.backupService.exportJson(settings)
+
+    suspend fun importBackupJson(content: String) {
+        container.backupService.importJson(content)
+        messages.value = AppI18n.text(container.appContext, "备份已导入")
+    }
+
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

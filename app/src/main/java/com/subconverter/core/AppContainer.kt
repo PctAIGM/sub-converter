@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.subconverter.data.AppDatabase
 import com.subconverter.data.settings.ServerSettingsStore
+import com.subconverter.data.backup.AppBackupService
 import com.subconverter.domain.GistUploader
 import com.subconverter.domain.JsOverrideService
 import com.subconverter.domain.MihomoYamlService
@@ -35,6 +36,7 @@ class AppContainer private constructor(context: Context) {
         .build()
 
     val settingsStore = ServerSettingsStore(appContext)
+    val backupService = AppBackupService(this)
     val jsOverrideService = JsOverrideService()
     val yamlService = MihomoYamlService(jsOverrideService)
     val subscriptionFetcher = SubscriptionFetcher()
