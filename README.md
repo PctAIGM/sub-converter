@@ -93,3 +93,6 @@ http://<IP>:9876/subscriptions/1.yaml?token=xxx
 ## 许可
 
 MIT
+
+## 友链
+[Linux DO](https://linux.do)
