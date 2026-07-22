@@ -7,6 +7,7 @@ import com.subconverter.data.SubscriptionSourceDao
 import com.subconverter.data.SubscriptionSourceEntity
 import com.subconverter.data.TemplateDao
 import com.subconverter.data.TemplateEntity
+import com.subconverter.data.TemplateType
 import com.subconverter.data.settings.ServerSettingsStore
 import kotlinx.coroutines.flow.Flow
 
@@ -35,6 +36,50 @@ class OutputRepository(
         templateDao.update(template.copy(updatedAt = System.currentTimeMillis()))
     }
 
+    suspend fun ensureBuiltinTemplates() {
+        val existing = templateDao.getAll()
+        val current = existing.firstOrNull { it.name == BUILTIN_PROXY_GROUPS_OVERRIDE_NAME }
+        val legacy = existing.firstOrNull { it.name == LEGACY_PROXY_GROUPS_OVERRIDE_NAME }
+        val alreadySeeded = settingsStore.isBuiltinProxyGroupsSeeded()
+        val body = BUILTIN_PROXY_GROUPS_OVERRIDE_YAML.trimIndent().trim()
+
+        when {
+            current != null && current.yamlBody.trim() != body -> updateTemplate(current.copy(yamlBody = body))
+            legacy != null -> updateTemplate(
+                legacy.copy(
+                    name = BUILTIN_PROXY_GROUPS_OVERRIDE_NAME,
+                    yamlBody = body,
+                    isDefault = true,
+                    global = false,
+                    type = TemplateType.YAML,
+                ),
+            )
+            !alreadySeeded -> addTemplate(
+                TemplateEntity(
+                    name = BUILTIN_PROXY_GROUPS_OVERRIDE_NAME,
+                    yamlBody = body,
+                    isDefault = true,
+                    enabled = true,
+                    global = false,
+                    type = TemplateType.YAML,
+                ),
+            )
+        }
+
+        if (!alreadySeeded && (current != null || legacy != null || templateDao.getAll().any {
+                it.name == BUILTIN_PROXY_GROUPS_OVERRIDE_NAME
+            })) {
+            settingsStore.markBuiltinProxyGroupsSeeded()
+        }
+
+        if (!settingsStore.isBuiltinProxyGroupsNonGlobalFixed()) {
+            templateDao.getAll().firstOrNull {
+                it.name == BUILTIN_PROXY_GROUPS_OVERRIDE_NAME || it.name == LEGACY_PROXY_GROUPS_OVERRIDE_NAME
+            }?.takeIf { it.global }?.let { updateTemplate(it.copy(global = false)) }
+            settingsStore.markBuiltinProxyGroupsNonGlobalFixed()
+        }
+    }
+
     suspend fun moveTemplate(templateId: Long, offset: Int) {
         val templates = templateDao.getAll()
         val currentIndex = templates.indexOfFirst { it.id == templateId }
@@ -59,6 +104,9 @@ class OutputRepository(
             ?: return RefreshOutcome(templateId, success = false, message = "覆写不存在")
         if (template.remoteUrl.isBlank()) {
             return RefreshOutcome(templateId, success = false, message = "覆写没有远程地址")
+        }
+        if (template.type == TemplateType.RULES) {
+            return RefreshOutcome(templateId, success = false, message = "规则覆写仅支持本地数据，不能从远程刷新")
         }
 
         templateDao.update(template.copy(lastError = ""))
@@ -219,6 +267,10 @@ class OutputRepository(
 
     internal fun parseIds(rawIds: String): List<Long> =
         rawIds.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
+
+    private companion object {
+        const val LEGACY_PROXY_GROUPS_OVERRIDE_NAME = "代理组（地区/节点/广告）"
+    }
 
     private fun aggregateUserInfo(sources: List<SubscriptionSourceEntity>): SubscriptionUserInfo? {
         val infos = sources.mapNotNull { it.userInfo() }

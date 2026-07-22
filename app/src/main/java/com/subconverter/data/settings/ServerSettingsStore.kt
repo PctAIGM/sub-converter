@@ -58,6 +58,24 @@ class ServerSettingsStore(private val context: Context) {
         }
     }
 
+    suspend fun isBuiltinProxyGroupsSeeded(): Boolean =
+        context.serverSettingsDataStore.data.first()[Keys.BuiltinProxyGroupsSeeded] ?: false
+
+    suspend fun markBuiltinProxyGroupsSeeded() {
+        context.serverSettingsDataStore.edit { preferences ->
+            preferences[Keys.BuiltinProxyGroupsSeeded] = true
+        }
+    }
+
+    suspend fun isBuiltinProxyGroupsNonGlobalFixed(): Boolean =
+        context.serverSettingsDataStore.data.first()[Keys.BuiltinProxyGroupsNonGlobalFixed] ?: false
+
+    suspend fun markBuiltinProxyGroupsNonGlobalFixed() {
+        context.serverSettingsDataStore.edit { preferences ->
+            preferences[Keys.BuiltinProxyGroupsNonGlobalFixed] = true
+        }
+    }
+
     suspend fun current(): ServerSettings = settings.first()
 
     private object Keys {
@@ -68,5 +86,7 @@ class ServerSettingsStore(private val context: Context) {
         val Token = stringPreferencesKey("token")
         val GlobalUserAgent = stringPreferencesKey("global_user_agent")
         val GistToken = stringPreferencesKey("gist_token")
+        val BuiltinProxyGroupsSeeded = booleanPreferencesKey("builtin_proxy_groups_seeded")
+        val BuiltinProxyGroupsNonGlobalFixed = booleanPreferencesKey("builtin_proxy_groups_nonglobal_v1")
     }
 }

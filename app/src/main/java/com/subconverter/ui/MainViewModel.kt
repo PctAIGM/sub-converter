@@ -243,7 +243,7 @@ class MainViewModel(
             }
             val template = (existing ?: TemplateEntity(name = "", yamlBody = "")).copy(
                 name = name.trim(),
-                remoteUrl = remoteUrl.trim(),
+                remoteUrl = remoteUrl.trim().takeUnless { type == TemplateType.RULES }.orEmpty(),
                 yamlBody = yamlBody,
                 enabled = enabled,
                 global = global,
@@ -284,6 +284,7 @@ class MainViewModel(
     fun addTemplate(name: String, yamlBody: String, type: String = TemplateType.YAML) {
         val defaultBody = when (type) {
             TemplateType.JS -> DEFAULT_OVERRIDE_JS.trimIndent()
+            TemplateType.RULES -> ""
             else -> yamlBody.ifBlank { DEFAULT_OVERRIDE_YAML.trimIndent() }
         }
         saveTemplate(

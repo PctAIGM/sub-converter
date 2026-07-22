@@ -217,4 +217,33 @@ class MihomoYamlServiceTest {
         assertNull(service.validateOverride("YAML", "rules+: []"))
         assertNotNull(service.validateOverride("YAML", "- not-an-object"))
     }
+
+    @Test
+    fun prependsRulesOverridesInOverrideOrder() {
+        val rendered = service.renderTemplate(
+            DEFAULT_MIHOMO_TEMPLATE.trimIndent(),
+            emptyList(),
+            overrides = listOf(
+                OverrideEntry(TemplateType.RULES, "DOMAIN,first.example,DIRECT\nMATCH,PROXY"),
+                OverrideEntry(TemplateType.RULES, "DOMAIN,second.example,REJECT"),
+            ),
+        )
+        val rules = Yaml().load<Map<String, Any?>>(rendered)["rules"] as List<*>
+
+        assertEquals(
+            listOf(
+                "DOMAIN,second.example,REJECT",
+                "DOMAIN,first.example,DIRECT",
+                "MATCH,PROXY",
+                "MATCH,PROXY",
+            ),
+            rules,
+        )
+    }
+
+    @Test
+    fun validatesRulesOverrideByType() {
+        assertNull(service.validateOverride(TemplateType.RULES, "DOMAIN,example.com,DIRECT"))
+        assertNotNull(service.validateOverride(TemplateType.RULES, "MATCH"))
+    }
 }

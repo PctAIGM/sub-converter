@@ -75,6 +75,7 @@ data class TemplateEntity(
 object TemplateType {
     const val YAML = "YAML"
     const val JS = "JS"
+    const val RULES = "RULES"
 }
 
 @Entity(tableName = "output_profiles")

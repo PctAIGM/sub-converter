@@ -148,6 +148,7 @@ import com.subconverter.data.TemplateEntity
 import com.subconverter.data.TemplateType
 import com.subconverter.data.settings.ServerSettings
 import com.subconverter.domain.DEFAULT_OVERRIDE_JS
+import com.subconverter.domain.DEFAULT_OVERRIDE_RULES
 import com.subconverter.domain.DEFAULT_OVERRIDE_YAML
 import com.subconverter.domain.DnsConnectionMode
 import com.subconverter.domain.DnsProtocol
@@ -783,6 +784,7 @@ private fun TemplateEditScreen(
 ) {
     val yamlOverrideName = localize("YAML 覆写")
     val jsOverrideName = localize("JavaScript 覆写")
+    val rulesOverrideName = localize("规则覆写")
     var name by rememberSaveable(template?.id, yamlOverrideName) { mutableStateOf(template?.name ?: yamlOverrideName) }
     var remoteUrl by rememberSaveable(template?.id) { mutableStateOf(template?.remoteUrl.orEmpty()) }
     var enabled by rememberSaveable(template?.id) { mutableStateOf(template?.enabled ?: true) }
@@ -797,10 +799,11 @@ private fun TemplateEditScreen(
 
     fun defaultBodyFor(type: String) = when (type) {
         TemplateType.JS -> DEFAULT_OVERRIDE_JS.trimIndent()
+        TemplateType.RULES -> DEFAULT_OVERRIDE_RULES
         else -> DEFAULT_OVERRIDE_YAML.trimIndent()
     }
 
-    if (editorFullScreen) {
+    if (editorFullScreen && type != TemplateType.RULES) {
         FullScreenCodeEditor(
             value = body,
             onValueChange = { body = it },
@@ -831,7 +834,11 @@ private fun TemplateEditScreen(
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("覆写类型".l10n(), style = MaterialTheme.typography.bodySmall)
                         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            val options = listOf(TemplateType.YAML to "YAML", TemplateType.JS to "JavaScript")
+                            val options = listOf(
+                                TemplateType.YAML to "YAML",
+                                TemplateType.JS to "JavaScript",
+                                TemplateType.RULES to localize("规则"),
+                            )
                             options.forEachIndexed { index, (value, label) ->
                                 SegmentedButton(
                                     selected = type == value,
@@ -840,11 +847,16 @@ private fun TemplateEditScreen(
                                             if (body.isBlank() || body == defaultBodyFor(type)) {
                                                 body = defaultBodyFor(value)
                                             }
-                                            if (name == "YAML 覆写" || name == "JavaScript 覆写" ||
-                                                name == "YAML Override" || name == "JavaScript Override"
+                                            if (name == "YAML 覆写" || name == "JavaScript 覆写" || name == "规则覆写" ||
+                                                name == "YAML Override" || name == "JavaScript Override" || name == "Rules Override"
                                             ) {
-                                                name = if (value == TemplateType.JS) jsOverrideName else yamlOverrideName
+                                                name = when (value) {
+                                                    TemplateType.JS -> jsOverrideName
+                                                    TemplateType.RULES -> rulesOverrideName
+                                                    else -> yamlOverrideName
+                                                }
                                             }
+                                            if (value == TemplateType.RULES) remoteUrl = ""
                                             type = value
                                         }
                                     },
@@ -857,8 +869,10 @@ private fun TemplateEditScreen(
                     }
                     FieldDivider()
                     SmallFormField("名称", name, { name = it }, "覆写名称")
-                    FieldDivider()
-                    SmallFormField("远程 URL", remoteUrl, { remoteUrl = it }, "留空为本地覆写")
+                    if (type != TemplateType.RULES) {
+                        FieldDivider()
+                        SmallFormField("远程 URL", remoteUrl, { remoteUrl = it }, "留空为本地覆写")
+                    }
                     FieldDivider()
                     iOSFormSwitch("启用覆写", "关闭后不会参与任何输出", enabled, { enabled = it })
                     FieldDivider()
@@ -866,13 +880,20 @@ private fun TemplateEditScreen(
                 }
             }
             item {
-                CodeEditorField(
-                    value = body,
-                    onValueChange = { body = it },
-                    type = type,
-                    modifier = Modifier.fillMaxWidth(),
-                    onRequestFullScreen = { editorFullScreen = true },
-                )
+                if (type == TemplateType.RULES) {
+                    RulesEditorField(
+                        value = body,
+                        onValueChange = { body = it },
+                    )
+                } else {
+                    CodeEditorField(
+                        value = body,
+                        onValueChange = { body = it },
+                        type = type,
+                        modifier = Modifier.fillMaxWidth(),
+                        onRequestFullScreen = { editorFullScreen = true },
+                    )
+                }
             }
         }
     }
@@ -1652,7 +1673,7 @@ private fun OverrideHelpScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "基础配置生成后，先应用全局覆写，再按输出配置里的顺序应用专属覆写。同一个覆写只会执行一次。同一输出中先合并所有 YAML 覆写，再按顺序执行 JavaScript 覆写。".l10n(),
+                            "基础配置生成后，先应用全局覆写，再按输出配置里的顺序应用专属覆写。同一个覆写只会执行一次。同一输出中按列表顺序应用：YAML 合并、规则覆写插入 rules 开头、JavaScript 覆写执行。".l10n(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1700,6 +1721,21 @@ private fun OverrideHelpScreen(
                       enable: true
                       enhanced-mode: fake-ip
                     """.trimIndent(),
+                )
+            }
+
+            item {
+                SectionHeader("规则覆写")
+                iOSGroupedCard {
+                    Text(
+                        "规则覆写仅支持本地编辑，每行一条 mihomo 规则（类型,内容,目标）。按列表顺序插入到最终配置 rules 的开头。类型支持下拉选择与输入筛选。".l10n(),
+                        modifier = Modifier.padding(14.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OverrideHelpCodeBlock(
+                    "DOMAIN-SUFFIX,google.com,DIRECT\nGEOIP,CN,DIRECT,no-resolve\nMATCH,PROXY",
                 )
             }
 
@@ -4140,7 +4176,11 @@ private fun overrideSummary(context: android.content.Context, profile: OutputPro
 
 private fun overrideStateText(context: android.content.Context, template: TemplateEntity): String =
     listOfNotNull(
-        if (template.type == TemplateType.JS) "JS" else "YAML",
+        when (template.type) {
+            TemplateType.JS -> "JS"
+            TemplateType.RULES -> AppI18n.text(context, "规则")
+            else -> "YAML"
+        },
         if (template.enabled) AppI18n.text(context, "启用") else AppI18n.text(context, "停用"),
         if (template.global) AppI18n.text(context, "全局") else null,
     ).joinToString(" · ")

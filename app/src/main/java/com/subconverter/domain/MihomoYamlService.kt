@@ -7,6 +7,7 @@ import java.util.LinkedHashMap
 
 class MihomoYamlService(
     private val jsService: JsOverrideService = JsOverrideService(),
+    private val ruleService: RuleOverrideService = RuleOverrideService(),
 ) {
     private val yaml = Yaml(
         DumperOptions().apply {
@@ -80,6 +81,7 @@ class MihomoYamlService(
         overrides.forEachIndexed { index, entry ->
             renderedRoot = when (entry.type) {
                 TemplateType.JS -> applySingleJsOverride(renderedRoot, entry.body, index + 1)
+                TemplateType.RULES -> applyRulesOverride(renderedRoot, entry.body)
                 else -> {
                     val patch = parseOverrideMap(entry.body)
                     val expandedPatch = replacePlaceholders(patch, proxyNames)
@@ -91,6 +93,17 @@ class MihomoYamlService(
             }
         }
         return yaml.dump(renderedRoot)
+    }
+
+    private fun applyRulesOverride(
+        root: MutableMap<String, Any?>,
+        body: String,
+    ): MutableMap<String, Any?> {
+        val rules = ruleService.parseRuleStrings(body)
+        if (rules.isEmpty()) return root
+        val existing = (root["rules"] as? List<*>)?.map(::copyValue).orEmpty()
+        root["rules"] = rules + existing
+        return root
     }
 
     private fun applySingleJsOverride(
@@ -126,6 +139,7 @@ class MihomoYamlService(
     fun validateOverride(type: String, body: String): String? =
         when (type) {
             TemplateType.JS -> jsService.validate(body)
+            TemplateType.RULES -> ruleService.validate(body)
             else -> validateOverrideYaml(body)
         }
 
